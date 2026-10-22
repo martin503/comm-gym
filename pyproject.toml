@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cartgym"]
+
+[project]
+name = "comm-gym"
+version = "0.1.0"
+description = "Commerce RL gym based on Dunnhumby data."
+readme = "README.md"
+requires-python = "==3.12.*"
+authors = [
+    { name = "Marcin", email = "m6rcin53@gmail.com" }
+]
+dependencies = [
+    "datasets>=5.1.0",
+    "loguru>=0.7.3",
+    "numpy>=2.5.4",
+    "openai>=3.36.1",
+    "pandas>=3.1.0",
+    "pydantic>=2.14.1",
+    "pyyaml>=6.0.3",
+    "tiktoken>=0.14.0",
+    "tqdm>=4.70.1",
+    "verifiers==0.3.1",
+]
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "ty",
+    "pytest",
+    "pre-commit",
+    "hypothesis>=6.170.5",
+]
+
+[tool.ruff]
+line-length = 99
+target-version = "py312"
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["cartgym"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+

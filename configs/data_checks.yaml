@@ -1,0 +1,17 @@
+expectations:
+  min_day: 1
+  max_day: 711
+  min_week: 1
+  max_week: 102
+  n_households: 2500
+derivation_min_valid_share: 0.99
+price_coverage_min_skus: 4
+price_coverage_min_pair_share: 0.50
+price_spread_min_median_cv: 0.05
+coupon_amounts_min_lines: 1000
+basket_min_share_at_max_categories: 0.05
+max_categories: 8
+ramp_steady_state_share: 0.80
+campaign_window_start_day: 224
+heldout_commodity_share: 0.20
+heldout_seed: 42

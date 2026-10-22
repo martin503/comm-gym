@@ -1,0 +1,20 @@
+levels:
+  L1:
+    categories: 4
+    skus_per_category: 3
+    sku_coupons: [1, 2]
+    threshold_bundles: 0
+    brand_quota: false
+    # 2026-10-22 shortcut gate: always-coupon-SKU beat constraint-aware greedy (0.972 vs
+    # 0.904, 80% exact-opt); gap-capped amounts keep some coupons from flipping the ranking
+    coupon_gap_cap_prob: 0.5
+  L2:
+    categories: 5
+    skus_per_category: 4
+    sku_coupons: [2, 3]
+    threshold_bundles: 1
+    brand_quota: true
+tie_eps_cents: 1
+near_tie_delta_cents: 10
+trap_rate: 0.70
+gap_cap_margin_cents: [15, 65]

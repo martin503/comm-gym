@@ -1,0 +1,3 @@
+max_quantity: 12
+excluded_departments: ["KIOSK-GAS", "COUP/STR & MFG", ""]
+excluded_commodities: ["NO COMMODITY DESCRIPTION"]

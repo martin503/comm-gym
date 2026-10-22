@@ -1,0 +1,9 @@
+cutoff_week: 68
+campaign_window_start_day: 224
+train_hh_ratio: 0.8
+n_spend_tiers: 4
+heldout_min_skus: 4
+heldout_min_weeks: 10
+heldout_commodity_share: 0.20
+heldout_seed: 42
+seed: 42

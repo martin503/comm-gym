@@ -1,0 +1,6 @@
+w_partial: 0.3
+w_feasible: 0.5
+w_opt: 0.4
+w_price: 0.1
+tie_eps_cents: 1
+price_tol_cents: 1
