@@ -9,10 +9,12 @@ import pandas as pd
 from loguru import logger
 from tqdm import tqdm
 
-from cartgym.config import CleaningConfig, DataChecksConfig, SplitsConfig, load_config
-from cartgym.data.clean import CleaningReport, prepare_transactions
-from cartgym.data.load import data_dir as default_data_dir
-from cartgym.data.load import (
+from commgym.core.config import load_config
+from commgym.core.logging import setup_logging
+from commgym.dunnhumby.clean import CleaningReport, prepare_transactions
+from commgym.dunnhumby.config import CleaningConfig, DataChecksConfig, SplitsConfig
+from commgym.dunnhumby.load import data_dir as default_data_dir
+from commgym.dunnhumby.load import (
     iter_causal_chunks,
     load_campaign_targeting,
     load_campaigns,
@@ -22,8 +24,7 @@ from cartgym.data.load import (
     load_products,
     load_transactions,
 )
-from cartgym.data.splits import eligible_commodities, select_heldout_commodities
-from cartgym.logging import setup_logging
+from commgym.dunnhumby.splits import eligible_commodities, select_heldout_commodities
 
 
 @dataclass(frozen=True, slots=True)

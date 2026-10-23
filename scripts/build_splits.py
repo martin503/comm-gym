@@ -4,11 +4,12 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
-from cartgym.config import CleaningConfig, SplitsConfig, load_config
-from cartgym.data.clean import prepare_transactions
-from cartgym.data.load import load_demographics, load_products, load_transactions
-from cartgym.data.splits import Splits, build_splits
-from cartgym.logging import setup_logging
+from commgym.core.config import load_config
+from commgym.core.logging import setup_logging
+from commgym.dunnhumby.clean import prepare_transactions
+from commgym.dunnhumby.config import CleaningConfig, SplitsConfig
+from commgym.dunnhumby.load import load_demographics, load_products, load_transactions
+from commgym.dunnhumby.splits import Splits, build_splits
 
 
 def main() -> None:

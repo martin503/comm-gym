@@ -226,7 +226,7 @@ Run through the **same reward function** and saved in the same rollout format.
 
 ---
 
-## 9. Evaluation (`scripts/run_eval.py`)
+## 9. Evaluation (`scripts/cartopt/run_eval.py`)
 
 ### 9.1 Models
 - **API lineup (2026-10-23): `openai/gpt-6-luna` only.** `qwen/qwen3.7-flash` was tried as the cheap tier and dropped: at `max_tokens=2048` it spent all 2048 tokens on reasoning with an empty completion (0/20 parseable), at ~37 s/rollout — slow and effectively more expensive per usable rollout. To revive it: a larger completion budget or thinking disabled via `extra_body`.
@@ -239,12 +239,12 @@ Run through the **same reward function** and saved in the same rollout format.
 - **Budget dry run first**: 10 instances × k = 2 per model and level. Measure input, output, and reasoning tokens, extrapolate cost, and size `N` to stay within the key limit with a safety margin. Log cost per rollout.
 - Retries with backoff. Failed API calls are logged as such and **excluded** from reward statistics, never scored as 0.
 
-### 9.3 Rollout record (`rollouts/<model>/<split>_<level>.jsonl`)
+### 9.3 Rollout record (`rollouts/cartopt/<model>/<split>_<level>.jsonl`)
 `instance_id, level, stratum(trap/no_trap), model, sampling_params, rollout_idx, prompt, completion, parsed_answer, reward, components{...}, cost, C*, tokens{in,out,reasoning}, latency, seed, git_sha`
 
 ---
 
-## 10. Analysis (`scripts/analyze.py`)
+## 10. Analysis (`scripts/cartopt/analyze.py`)
 For each task × level × stratum × model:
 - **Mean reward** with a 95% bootstrap CI over instances (resampling instances, not rollouts).
 - **Exact-optimal rate**, i.e. pass@1, and **pass@k** for k ∈ {1, 4, 8} with the unbiased estimator.
@@ -262,19 +262,16 @@ For each task × level × stratum × model:
 cartgym/
 ├── pyproject.toml            # uv; verifiers pinned
 ├── README.md                 # install, data setup, rerun small eval (L1, N=10, k=2)
-├── configs/                  # levels.yaml, splits.yaml, reward.yaml, eval.yaml
-├── src/cartgym/
-│   ├── data/{load.py, clean.py, prices.py, splits.py}
-│   ├── generator.py
-│   ├── pricing.py
-│   ├── solver.py
-│   ├── reward.py
-│   ├── prompts.py
-│   ├── baselines.py
-│   └── env.py
-├── scripts/{check_data.py, build_splits.py, generate.py, run_eval.py, run_baselines.py, analyze.py}
-├── tests/{test_pricing.py, test_solver.py, test_reward_hacking.py, test_properties.py, test_generator.py}
-├── rollouts/                 # committed: saved rollouts behind the reported results
+├── configs/                  # data.yaml, splits.yaml, data_checks.yaml, pricing.yaml
+│   └── cartopt/              # levels.yaml, reward.yaml
+├── src/commgym/
+│   ├── core/{logging.py, openrouter.py, config.py, vfenv.py, runner.py, stats.py}
+│   ├── dunnhumby/{types.py, load.py, clean.py, prices.py, splits.py, config.py}
+│   └── cartopt/{instance.py, pricing.py, solver.py, reward.py, prompts.py, baselines.py, generator.py, env.py, config.py}
+├── scripts/{check_data.py, build_splits.py}
+├── scripts/cartopt/{generate.py, run_eval.py, run_baselines.py, analyze.py}
+├── tests/{core, dunnhumby, cartopt}
+├── rollouts/cartopt/         # committed: saved rollouts behind the reported results
 └── reports/                  # data_checks.md, results tables, figures
 ```
 
