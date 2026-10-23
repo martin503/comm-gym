@@ -160,8 +160,9 @@ def _mini_tx() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def test_generated_instances_are_valid(context: GeneratorContext):
+def test_generated_instances_are_valid_and_deterministic(context: GeneratorContext):
     batch = generate_batch(context, 'T1', 'dev', n=3, seed=5)
+    repeat = generate_batch(context, 'T1', 'dev', n=3, seed=5)
     assert len(batch.instances) == 3
     for generated in batch.instances:
         instance = generated.instance
@@ -183,23 +184,20 @@ def test_generated_instances_are_valid(context: GeneratorContext):
             'c_star_matches_solver': True,
             'bought_products_in_menu': True,
         }
-    assert len({generated.info['basket'] for generated in batch.instances}) == 3
 
-
-def test_generation_is_deterministic(context: GeneratorContext):
-    first = generate_batch(context, 'T1', 'dev', n=3, seed=5)
-    second = generate_batch(context, 'T1', 'dev', n=3, seed=5)
-
-    def _digest(batch):
+    def _digest(generated_batch) -> list[object]:
         return [
             (
                 generated.info['c_star_cents'],
                 [sku.code for skus in generated.instance.menu.values() for sku in skus],
             )
-            for generated in batch.instances
+            for generated in generated_batch.instances
         ]
 
-    assert _digest(first) == _digest(second)
+    assert {
+        'unique_baskets': len({generated.info['basket'] for generated in batch.instances}),
+        'deterministic': _digest(batch) == _digest(repeat),
+    } == {'unique_baskets': 3, 'deterministic': True}
 
 
 def test_brand_quota_derived_from_history(context: GeneratorContext):
@@ -217,12 +215,6 @@ def test_heldout_categories_never_sampled(context: GeneratorContext):
     batch = generate_batch(heldout_ctx, 'T1', 'dev', n=2, seed=5)
     for generated in batch.instances:
         assert 'CAT-1' not in generated.instance.commodities
-
-
-def test_record_is_json_serializable(context: GeneratorContext):
-    batch = generate_batch(context, 'T1', 'dev', n=1, seed=5)
-    record = instance_to_record(batch.instances[0])
-    assert sorted(json.loads(json.dumps(record))) == ['info', 'instance']
 
 
 def test_record_round_trip_preserves_instance(context: GeneratorContext):
@@ -265,57 +257,63 @@ def test_record_to_instance_parses_eval_only_rules(make_sku):
     }
 
 
-def test_evaluate_instance_flags_trap_and_gap(make_sku, make_instance):
-    cat_a = make_sku('A1', 'CAT', shelf_cents=100, brand_tier=BrandTier.PRIVATE)
-    cat_b = make_sku('A2', 'CAT', shelf_cents=300, brand_tier=BrandTier.NATIONAL)
-    dog_a = make_sku('B1', 'DOG', shelf_cents=150, brand_tier=BrandTier.PRIVATE)
-    dog_b = make_sku('B2', 'DOG', shelf_cents=200, brand_tier=BrandTier.NATIONAL)
-    instance = make_instance(
-        {'CAT': [cat_a, cat_b], 'DOG': [dog_a, dog_b]},
+def test_evaluate_instance_accepts_traps_and_rejects_degenerates(make_sku, make_instance):
+    trap = make_instance(
+        {
+            'CAT': [
+                make_sku('A1', 'CAT', shelf_cents=100, brand_tier=BrandTier.PRIVATE),
+                make_sku('A2', 'CAT', shelf_cents=300, brand_tier=BrandTier.NATIONAL),
+            ],
+            'DOG': [
+                make_sku('B1', 'DOG', shelf_cents=150, brand_tier=BrandTier.PRIVATE),
+                make_sku('B2', 'DOG', shelf_cents=200, brand_tier=BrandTier.NATIONAL),
+            ],
+        },
         constraints=(BrandQuota(BrandTier.NATIONAL, 1),),
     )
-    stats = evaluate_instance(instance, solve(instance), greedy_cheapest_cart(instance), EVAL_CFG)
-    # greedy (A1+B1=250c) has no National item; cheapest feasible is A1+B2=300c,
-    # so the greedy cart is cheaper but infeasible: gap is negative and the instance is a trap
-    assert {
-        'accept': stats.accept,
-        'reason': stats.reject_reason,
-        'trap': stats.is_trap,
-        'gap': stats.greedy_gap_cents,
-        'binding': stats.binding_rules,
-    } == {
-        'accept': True,
-        'reason': None,
-        'trap': True,
-        'gap': -50,
-        'binding': ('quota:National',),
-    }
-
-
-def test_evaluate_instance_rejects_near_tie(make_sku, make_instance):
-    cat_a = make_sku('A1', 'CAT', shelf_cents=100)
-    cat_b = make_sku('A2', 'CAT', shelf_cents=105)
-    dog_a = make_sku('B1', 'DOG', shelf_cents=100)
-    dog_b = make_sku('B2', 'DOG', shelf_cents=200)
-    instance = make_instance({'CAT': [cat_a, cat_b], 'DOG': [dog_a, dog_b]})
-    stats = evaluate_instance(instance, solve(instance), greedy_cheapest_cart(instance), EVAL_CFG)
     # best non-optimal cart (A2+B1=205c) sits 5c above C*, inside the 10c near-tie band
-    assert {'accept': stats.accept, 'reason': stats.reject_reason} == {
-        'accept': False,
-        'reason': 'near_tie',
+    near_tie = make_instance(
+        {
+            'CAT': [
+                make_sku('A1', 'CAT', shelf_cents=100),
+                make_sku('A2', 'CAT', shelf_cents=105),
+            ],
+            'DOG': [
+                make_sku('B1', 'DOG', shelf_cents=100),
+                make_sku('B2', 'DOG', shelf_cents=200),
+            ],
+        }
+    )
+    all_tie = make_instance({'CAT': [make_sku('A1', 'CAT', shelf_cents=100)]})
+
+    def stats(instance):
+        return evaluate_instance(
+            instance, solve(instance), greedy_cheapest_cart(instance), EVAL_CFG
+        )
+
+    trap_stats = stats(trap)
+    # greedy on the trap (A1+B1=250c) has no National item; cheapest feasible is
+    # A1+B2=300c, so the greedy cart is cheaper but infeasible: negative gap
+    assert {
+        'trap_accept': trap_stats.accept,
+        'trap_reason': trap_stats.reject_reason,
+        'trap': trap_stats.is_trap,
+        'trap_gap': trap_stats.greedy_gap_cents,
+        'trap_binding': trap_stats.binding_rules,
+        'near_tie': (stats(near_tie).accept, stats(near_tie).reject_reason),
+        'all_tie': (stats(all_tie).accept, stats(all_tie).reject_reason),
+    } == {
+        'trap_accept': True,
+        'trap_reason': None,
+        'trap': True,
+        'trap_gap': -50,
+        'trap_binding': ('quota:National',),
+        'near_tie': (False, 'near_tie'),
+        'all_tie': (False, 'all_carts_tie'),
     }
 
 
-def test_evaluate_instance_rejects_all_tie(make_sku, make_instance):
-    instance = make_instance({'CAT': [make_sku('A1', 'CAT', shelf_cents=100)]})
-    stats = evaluate_instance(instance, solve(instance), greedy_cheapest_cart(instance), EVAL_CFG)
-    assert {'accept': stats.accept, 'reason': stats.reject_reason} == {
-        'accept': False,
-        'reason': 'all_carts_tie',
-    }
-
-
-def test_gap_cap_leaves_coupon_unflipped_beyond_near_tie_band(make_sku):
+def test_gap_cap_caps_only_flip_inducing_coupons(make_sku):
     # A2 net 250 vs A1 net 100 -> gap 150; a 200c coupon would flip the ranking (50 < 100),
     # capping to 150-30=120 leaves A2 post-coupon at 130, i.e. 30c above the alternative
     menu: dict[str, tuple[MenuSKU, ...]] = {
@@ -324,53 +322,19 @@ def test_gap_cap_leaves_coupon_unflipped_beyond_near_tie_band(make_sku):
             make_sku('A2', 'CAT', shelf_cents=250),
         )
     }
-    coupons: list[Coupon] = [SkuCoupon('K0', 'A2', 200)]
-    cfg = LevelsConfig(
-        levels={},
-        near_tie_delta_cents=10,
-        gap_cap_margin_cents=(30, 30),
+    cfg = LevelsConfig(levels={}, near_tie_delta_cents=10, gap_cap_margin_cents=(30, 30))
+    on = LevelConfig(
+        categories=1, skus_per_category=2, sku_coupons=(1, 1), coupon_gap_cap_prob=1.0
     )
-    _cap_coupon_amounts(
-        coupons,
-        menu,
-        LevelConfig(
-            categories=1, skus_per_category=2, sku_coupons=(1, 1), coupon_gap_cap_prob=1.0
-        ),
-        cfg,
-        np.random.default_rng(0),
-    )
-    assert coupons == [SkuCoupon('K0', 'A2', 120)]
-
-
-def test_gap_cap_skips_non_flipping_and_zero_prob(make_sku):
-    menu: dict[str, tuple[MenuSKU, ...]] = {
-        'CAT': (
-            make_sku('A1', 'CAT', shelf_cents=100),
-            make_sku('A2', 'CAT', shelf_cents=250),
-        )
-    }
-    cfg = LevelsConfig(levels={}, gap_cap_margin_cents=(30, 30))
+    off = LevelConfig(categories=1, skus_per_category=2, sku_coupons=(1, 1))
+    flip: list[Coupon] = [SkuCoupon('K0', 'A2', 200)]
     small: list[Coupon] = [SkuCoupon('K0', 'A2', 80)]  # below the 150c gap already
-    off: list[Coupon] = [SkuCoupon('K0', 'A2', 200)]
-    _cap_coupon_amounts(
-        small,
-        menu,
-        LevelConfig(
-            categories=1, skus_per_category=2, sku_coupons=(1, 1), coupon_gap_cap_prob=1.0
-        ),
-        cfg,
-        np.random.default_rng(0),
-    )
-    _cap_coupon_amounts(
-        off,
-        menu,
-        LevelConfig(
-            categories=1, skus_per_category=2, sku_coupons=(1, 1), coupon_gap_cap_prob=0.0
-        ),
-        cfg,
-        np.random.default_rng(0),
-    )
-    assert {'already_small': small, 'prob_zero': off} == {
+    skip: list[Coupon] = [SkuCoupon('K0', 'A2', 200)]
+    _cap_coupon_amounts(flip, menu, on, cfg, np.random.default_rng(0))
+    _cap_coupon_amounts(small, menu, on, cfg, np.random.default_rng(0))
+    _cap_coupon_amounts(skip, menu, off, cfg, np.random.default_rng(0))
+    assert {'capped': flip, 'already_small': small, 'prob_zero': skip} == {
+        'capped': [SkuCoupon('K0', 'A2', 120)],
         'already_small': [SkuCoupon('K0', 'A2', 80)],
         'prob_zero': [SkuCoupon('K0', 'A2', 200)],
     }

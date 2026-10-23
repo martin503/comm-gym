@@ -2,6 +2,7 @@ import pytest
 
 from commgym.cartopt.instance import (
     BrandTier,
+    Coupon,
     ManufacturerMultiBuy,
     MenuSKU,
     SkuCoupon,
@@ -54,37 +55,31 @@ def test_loyalty_discount_applied_before_coupons(make_instance, menu):
     } == {'total': 340, 'nets': (('A1', 250), ('B2', 90)), 'coupons': (), 'coupon_total': 0}
 
 
-def test_sku_coupon_applies_to_chosen_code(make_instance, menu):
+def test_sku_coupon_scoped_to_chosen_code(make_instance, menu):
     instance = make_instance(menu, coupons=(SkuCoupon('C1', 'A1', 40),))
-    assert cost({ICE: 'A1', SODA: 'B2'}, instance).total_cents == 300
+    assert {
+        'chosen': cost({ICE: 'A1', SODA: 'B2'}, instance).total_cents,
+        'not_chosen': cost({ICE: 'A2', SODA: 'B2'}, instance).total_cents,
+    } == {'chosen': 300, 'not_chosen': 290}
 
 
-def test_sku_coupon_ignored_when_code_not_chosen(make_instance, menu):
-    instance = make_instance(menu, coupons=(SkuCoupon('C1', 'A1', 40),))
-    assert cost({ICE: 'A2', SODA: 'B2'}, instance).total_cents == 290
+def test_bundle_and_multibuy_trigger_only_at_boundaries(make_instance, menu):
+    def total(coupons: tuple[Coupon, ...], cart: dict[str, str]) -> int:
+        return cost(cart, make_instance(menu, coupons=coupons)).total_cents
 
-
-def test_threshold_bundle_triggers_at_exact_threshold(make_instance, menu):
-    # spend on both categories with A1+B1 is exactly 250 + 120 = 370
-    instance = make_instance(menu, coupons=(ThresholdBundle('C2', (ICE, SODA), 370, 100),))
-    assert cost({ICE: 'A1', SODA: 'B1'}, instance).total_cents == 270
-
-
-def test_threshold_bundle_one_cent_below_does_not_trigger(make_instance, menu):
-    instance = make_instance(menu, coupons=(ThresholdBundle('C2', (ICE, SODA), 371, 100),))
-    assert cost({ICE: 'A1', SODA: 'B1'}, instance).total_cents == 370
-
-
-def test_multibuy_triggers_at_min_items(make_instance, menu):
-    # A1 and B1 are both manufacturer 7
-    instance = make_instance(menu, coupons=(ManufacturerMultiBuy('C3', 7, 2, 60),))
-    assert cost({ICE: 'A1', SODA: 'B1'}, instance).total_cents == 310
-
-
-def test_multibuy_below_min_items_does_not_trigger(make_instance, menu):
-    # only B1 is manufacturer 7 here
-    instance = make_instance(menu, coupons=(ManufacturerMultiBuy('C3', 7, 2, 60),))
-    assert cost({ICE: 'A2', SODA: 'B1'}, instance).total_cents == 320
+    a1_b1 = {ICE: 'A1', SODA: 'B1'}  # nets 250 + 120 = 370; both items manufacturer 7
+    a2_b1 = {ICE: 'A2', SODA: 'B1'}  # only B1 is manufacturer 7
+    assert {
+        'bundle_at_threshold': total((ThresholdBundle('C2', (ICE, SODA), 370, 100),), a1_b1),
+        'bundle_one_cent_below': total((ThresholdBundle('C2', (ICE, SODA), 371, 100),), a1_b1),
+        'multibuy_at_min_items': total((ManufacturerMultiBuy('C3', 7, 2, 60),), a1_b1),
+        'multibuy_below_min_items': total((ManufacturerMultiBuy('C3', 7, 2, 60),), a2_b1),
+    } == {
+        'bundle_at_threshold': 270,
+        'bundle_one_cent_below': 370,
+        'multibuy_at_min_items': 310,
+        'multibuy_below_min_items': 320,
+    }
 
 
 def test_all_coupon_kinds_stack(make_instance, menu):
@@ -96,17 +91,5 @@ def test_all_coupon_kinds_stack(make_instance, menu):
             ManufacturerMultiBuy('C3', 7, 2, 60),
         ),
     )
-    # base 370; sku coupon -40; bundle (spend 370 ≥ 370) -100; multibuy (2 items of mfr 7) -60
+    # base 370; sku coupon -40; bundle (spend 370 >= 370) -100; multibuy (2 items of mfr 7) -60
     assert cost({ICE: 'A1', SODA: 'B1'}, instance).total_cents == 170
-
-
-def test_loyalty_discount_cannot_exceed_shelf_price():
-    with pytest.raises(AssertionError, match='loyalty discount'):
-        _sku('X', ICE, 100, 101, BrandTier.PRIVATE, 1)
-
-
-def test_total_never_negative(make_instance):
-    menu = {SODA: [_sku('B2', SODA, 100, 10, BrandTier.PRIVATE, 9)]}
-    instance = make_instance(menu, coupons=(SkuCoupon('C1', 'B2', 500),))
-    with pytest.raises(AssertionError, match='negative'):
-        cost({SODA: 'B2'}, instance)

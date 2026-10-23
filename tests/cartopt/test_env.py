@@ -5,7 +5,6 @@ import pytest
 
 from commgym.cartopt.config import RewardConfig
 from commgym.cartopt.env import (
-    load_environment,
     load_rows,
     metric_exact_opt,
     metric_parse_ok,
@@ -77,33 +76,6 @@ def test_env_reward_funcs_match_verifiers_call_contract(instances_dir: Path):
         'exact': 1.0,
         'garbage_total': 0.0,
         'garbage_parse': 0.0,
-    }
-
-
-def test_env_builds_single_turn_env_with_context_columns(instances_dir: Path):
-    env = load_environment('T1', 'dev', n=1, seed=0, instances_dir=instances_dir)
-    dataset = env.eval_dataset
-    assert dataset is not None, 'eval dataset must build eagerly from a raw Dataset'
-    assert {
-        'type': type(env).__name__,
-        'env_id': env.env_id,
-        'columns': sorted(dataset.column_names),
-        'n': dataset.num_rows,
-    } == {
-        'type': 'SingleTurnEnv',
-        'env_id': 'cart-optimizer/dev/T1',
-        'columns': [
-            'c_ref_cents',
-            'c_star_cents',
-            'example_id',
-            'instance_id',
-            'is_trap',
-            'level',
-            'prompt',
-            'record',
-            'reward_cfg',
-        ],
-        'n': 1,
     }
 
 

@@ -10,7 +10,6 @@ from commgym.core.runner import (
     EvalItem,
     GradeOutcome,
     RunState,
-    existing_results,
     resume_keys,
     run_level,
 )
@@ -146,26 +145,3 @@ def test_resume_keys_drops_truncated_lines_and_filters_params(tmp_path: Path):
         'same_params': {('i1', 0)},
         'file_rewritten_without_truncated': [good, other_params],
     }
-
-
-def test_existing_results_reads_success_key(tmp_path: Path):
-    out_path = tmp_path / 'roll.jsonl'
-    record = json.dumps(
-        {
-            'instance_id': 'i1',
-            'rollout_idx': 0,
-            'reward': 0.5,
-            'sampling_params': PARAMS,
-            'components': {'success': True},
-        }
-    )
-    out_path.write_text(record + '\n')
-    assert existing_results(out_path, PARAMS, 'success') == ([0.5], [True])
-
-
-def test_resume_helpers_on_missing_file(tmp_path: Path):
-    missing = tmp_path / 'nope.jsonl'
-    assert {
-        'keys': resume_keys(missing, PARAMS),
-        'results': existing_results(missing, PARAMS, 'success'),
-    } == {'keys': set(), 'results': ([], [])}

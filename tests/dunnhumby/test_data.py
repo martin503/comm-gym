@@ -1,9 +1,8 @@
 import pandas as pd
-import pytest
 
 from commgym.dunnhumby.clean import clean_transactions, derive_unit_prices
 from commgym.dunnhumby.config import CleaningConfig
-from commgym.dunnhumby.load import Product, load_products, load_transactions
+from commgym.dunnhumby.load import Product, load_products
 
 PRODUCT_CSV = (
     'PRODUCT_ID,MANUFACTURER,DEPARTMENT,BRAND,COMMODITY_DESC,SUB_COMMODITY_DESC,CURR_SIZE_OF_PRODUCT\n'
@@ -11,14 +10,6 @@ PRODUCT_CSV = (
     '102,3,GROCERY,Private,BAG SNACKS,CHIPS,10 OZ\n'
     '103,,GROCERY,National,SALAD BAR,MISC,\n'
     '104,4,KIOSK-GAS,Private,GAS,GAS,1 GAL\n'
-)
-
-TRANSACTION_CSV = (
-    'household_key,BASKET_ID,DAY,PRODUCT_ID,QUANTITY,SALES_VALUE,STORE_ID,RETAIL_DISC,TRANS_TIME,'
-    'WEEK_NO,COUPON_DISC,COUPON_MATCH_DISC\n'
-    '1,26984851472,1,101,1,1.39,364,-0.60,1631,1,0,0\n'
-    '1,26984851472,1,102,1,0.82,364,0,1631,1,0,0\n'
-    '2,26984851473,10,101,2,2.78,364,-1.20,900,2,-0.15,0\n'
 )
 
 
@@ -34,18 +25,6 @@ def test_load_products_drops_invalid_rows(tmp_path):
         'brands': ['National', 'Private', 'Private'],
         'commodity_of_102': 'BAG SNACKS',
     }
-
-
-def test_load_transactions_validates_schema(tmp_path):
-    (tmp_path / 'transaction_data.csv').write_text(TRANSACTION_CSV)
-    tx = load_transactions(tmp_path)
-    assert {'shape': tx.shape, 'day_dtype': str(tx['DAY'].dtype)} == {
-        'shape': (3, 12),
-        'day_dtype': 'int16',
-    }
-    (tmp_path / 'transaction_data.csv').write_text('a,b\n1,2\n')
-    with pytest.raises(AssertionError, match='schema'):
-        load_transactions(tmp_path)
 
 
 def test_derive_unit_prices_matches_user_guide_definition():

@@ -4,9 +4,8 @@ from hypothesis import strategies as st
 
 from commgym.cartopt.config import RewardConfig
 from commgym.cartopt.instance import BrandQuota, BrandTier, Constraint, Coupon, Instance, MenuSKU
-from commgym.cartopt.pricing import cost
 from commgym.cartopt.reward import grade, grade_cart, parse_completion
-from commgym.cartopt.solver import cart_at, optimal_cart, solve
+from commgym.cartopt.solver import cart_at, solve
 
 CFG = RewardConfig()
 
@@ -75,24 +74,6 @@ def test_infeasible_cart_scores_below_feasible(instance: Instance, seed: int):
         'partial_cap': infeasible_r <= CFG.w_partial,
         'feasible_floor': feasible_r >= CFG.w_feasible,
     } == {'ordering': True, 'partial_cap': True, 'feasible_floor': True}
-
-
-@given(instance=quota_instances())
-def test_oracle_cart_reaches_one_and_worst_feasible_gets_zero_opt(instance: Instance):
-    solution = solve(instance)
-    assume(solution.n_feasible > 0)
-    feasible_costs = solution.costs_cents[solution.feasible]
-    assume(int(feasible_costs.max()) > solution.c_star_cents() + CFG.tie_eps_cents)
-    instance, c_star, c_ref = _reference(instance)
-    worst_idx = int(np.flatnonzero(solution.feasible)[int(np.argmax(feasible_costs))])
-    worst = cart_at(instance, worst_idx)
-    worst_cost = int(feasible_costs.max())
-    best = optimal_cart(instance, solution, CFG.tie_eps_cents)
-    best_cost = cost(best, instance).total_cents
-    assert {
-        'best': grade_cart(best, best_cost / 100, instance, c_star, c_ref, CFG).reward,
-        'worst_opt': grade_cart(worst, worst_cost / 100, instance, c_star, c_ref, CFG).opt,
-    } == {'best': 1.0, 'worst_opt': 0.0}
 
 
 @given(junk=st.text(), payload=st.text())

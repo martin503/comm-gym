@@ -62,141 +62,110 @@ def _fields(result: GradeResult) -> dict[str, object]:
     }
 
 
-def test_oracle_scores_one():
-    assert _fields(_grade_cart({'CAT': 'A2', 'DOG': 'B1'}, 4.00)) == {
-        'reward': 1.0,
-        'feasible': True,
-        'frac': 1.0,
-        'opt': 1.0,
-        'exact_opt': True,
-        'price_ok': True,
-        'violations': (),
-        'cost': 400,
+def test_oracle_weights_and_total_penalties():
+    assert {
+        'oracle': _fields(_grade_cart({'CAT': 'A2', 'DOG': 'B1'}, 4.00)),
+        'overstated_total': _fields(_grade_cart({'CAT': 'A2', 'DOG': 'B1'}, 4.99)),
+        'understated_total': _fields(_grade_cart({'CAT': 'A2', 'DOG': 'B1'}, 3.00)),
+    } == {
+        'oracle': {
+            'reward': 1.0,
+            'feasible': True,
+            'frac': 1.0,
+            'opt': 1.0,
+            'exact_opt': True,
+            'price_ok': True,
+            'violations': (),
+            'cost': 400,
+        },
+        'overstated_total': {
+            'reward': 0.9,
+            'feasible': True,
+            'frac': 1.0,
+            'opt': 1.0,
+            'exact_opt': True,
+            'price_ok': False,
+            'violations': (),
+            'cost': 400,
+        },
+        'understated_total': {
+            'reward': 0.9,
+            'feasible': True,
+            'frac': 1.0,
+            'opt': 1.0,
+            'exact_opt': True,
+            'price_ok': False,
+            'violations': (),
+            'cost': 400,
+        },
     }
 
 
-def test_oracle_with_wrong_total():
-    assert _fields(_grade_cart({'CAT': 'A2', 'DOG': 'B1'}, 4.99)) == {
-        'reward': 0.9,
-        'feasible': True,
-        'frac': 1.0,
-        'opt': 1.0,
-        'exact_opt': True,
-        'price_ok': False,
-        'violations': (),
-        'cost': 400,
+def test_infeasible_carts_score_partial_fractions():
+    # (cart, violations, constraint checks passed); frac and reward are 3/4-style partials
+    cases: dict[str, tuple[Mapping[str, object], tuple[str, ...], int]] = {
+        'bad_code': ({'CAT': 'Z9', 'DOG': 'B2'}, ('bad_code:CAT',), 3),
+        'list_in_category': (
+            {'CAT': ['A1', 'A2'], 'DOG': 'B1'},
+            ('bad_code:CAT', 'quota:National'),
+            2,
+        ),
+        'missing_category': ({'DOG': 'B2'}, ('missing:CAT',), 3),
+        'extra_category': (
+            {'CAT': 'A1', 'DOG': 'B2', 'FREE': 'A2'},
+            ('extra_categories',),
+            3,
+        ),
+        'wrong_category': (
+            {'CAT': 'B1', 'DOG': 'A1'},
+            ('wrong_category:CAT', 'wrong_category:DOG', 'quota:National'),
+            1,
+        ),
+    }
+    actual = {}
+    for name, (cart, _, _) in cases.items():
+        result = _grade_cart(cart, 3.50)
+        actual[name] = (result.violations, result.frac_constraints, result.reward)
+    assert actual == {
+        name: (violations, passed / CHECKS, 0.3 * passed / CHECKS)
+        for name, (_, violations, passed) in cases.items()
     }
 
 
-def test_fudged_total_under_reports_cost():
-    result = _grade_cart({'CAT': 'A2', 'DOG': 'B1'}, 3.00)
-    assert {'price_ok': result.price_ok, 'reward': result.reward} == {
-        'price_ok': False,
-        'reward': 0.9,
+def test_parse_failure_modes_score_zero():
+    cases = {
+        'no_answer_block': (
+            'The cheapest cart is A1 + B2 for $3.50.',
+            'parse:no_answer_block',
+        ),
+        'invalid_json': (
+            '<answer>{"cart": {CAT: A1}, "total": 3.50}</answer>',
+            'parse:invalid_json',
+        ),
+        'json_outside_tags': (
+            '{"cart": {"CAT": "A1", "DOG": "B2"}, "total": 3.50}',
+            'parse:no_answer_block',
+        ),
+        'non_numeric_total': (
+            '<answer>{"cart": {"CAT": "A1"}, "total": "cheap"}</answer>',
+            'parse:total_not_numeric',
+        ),
+        'multiple_answer_blocks': (
+            _completion({'CAT': 'A2', 'DOG': 'B1'}, 4.00)
+            + _completion({'CAT': 'A2', 'DOG': 'B2'}, 4.60),
+            'parse:multiple_answer_blocks',
+        ),
     }
+    actual = {}
+    for name, (text, _) in cases.items():
+        result = _grade_text(text)
+        actual[name] = (result.reward, result.violations[0])
+    assert actual == {name: (0.0, reason) for name, (_, reason) in cases.items()}
 
 
-def test_code_not_in_menu_is_infeasible():
-    # CAT invalid (quota still satisfied by B2): 3 of 4 checks pass
-    assert _fields(_grade_cart({'CAT': 'Z9', 'DOG': 'B2'}, 3.50)) == {
-        'reward': 0.3 * 3 / CHECKS,
-        'feasible': False,
-        'frac': 3 / CHECKS,
-        'opt': 0.0,
-        'exact_opt': False,
-        'price_ok': False,
-        'violations': ('bad_code:CAT',),
-        'cost': None,
-    }
-
-
-def test_two_skus_in_one_category_is_infeasible():
-    # CAT holds a list (bad code) and the quota then fails too (B1 is Private)
-    assert _fields(_grade_cart({'CAT': ['A1', 'A2'], 'DOG': 'B1'}, 3.50)) == {
-        'reward': 0.3 * 2 / CHECKS,
-        'feasible': False,
-        'frac': 2 / CHECKS,
-        'opt': 0.0,
-        'exact_opt': False,
-        'price_ok': False,
-        'violations': ('bad_code:CAT', 'quota:National'),
-        'cost': None,
-    }
-
-
-def test_missing_category_is_infeasible():
-    assert _fields(_grade_cart({'DOG': 'B2'}, 2.00)) == {
-        'reward': 0.3 * 3 / CHECKS,
-        'feasible': False,
-        'frac': 3 / CHECKS,
-        'opt': 0.0,
-        'exact_opt': False,
-        'price_ok': False,
-        'violations': ('missing:CAT',),
-        'cost': None,
-    }
-
-
-def test_extra_category_is_infeasible():
-    result = _grade_cart({'CAT': 'A1', 'DOG': 'B2', 'FREE': 'A2'}, 3.50)
-    assert result.violations == ('extra_categories',)
-
-
-def test_code_assigned_to_wrong_category():
-    # both categories fail, and with no valid picks the quota fails too: 1 of 4 checks
-    assert _fields(_grade_cart({'CAT': 'B1', 'DOG': 'A1'}, 3.50)) == {
-        'reward': 0.3 * 1 / CHECKS,
-        'feasible': False,
-        'frac': 1 / CHECKS,
-        'opt': 0.0,
-        'exact_opt': False,
-        'price_ok': False,
-        'violations': ('wrong_category:CAT', 'wrong_category:DOG', 'quota:National'),
-        'cost': None,
-    }
-
-
-def test_multiple_answer_blocks_score_zero():
-    text = _completion({'CAT': 'A2', 'DOG': 'B1'}, 4.00) + _completion(
-        {'CAT': 'A2', 'DOG': 'B2'}, 4.60
-    )
-    result = _grade_text(text)
-    assert {'reward': result.reward, 'reason': result.violations[0]} == {
-        'reward': 0.0,
-        'reason': 'parse:multiple_answer_blocks',
-    }
-
-
-def test_no_answer_block_scores_zero():
-    result = _grade_text('The cheapest cart is A1 + B2 for $3.50.')
-    assert {'reward': result.reward, 'reason': result.violations[0]} == {
-        'reward': 0.0,
-        'reason': 'parse:no_answer_block',
-    }
-
-
-def test_malformed_json_scores_zero():
-    result = _grade_text('<answer>{"cart": {CAT: A1}, "total": 3.50}</answer>')
-    assert {'reward': result.reward, 'reason': result.violations[0]} == {
-        'reward': 0.0,
-        'reason': 'parse:invalid_json',
-    }
-
-
-def test_json_outside_tags_scores_zero():
-    result = _grade_text('{"cart": {"CAT": "A1", "DOG": "B2"}, "total": 3.50}')
-    assert {'reward': result.reward, 'reason': result.violations[0]} == {
-        'reward': 0.0,
-        'reason': 'parse:no_answer_block',
-    }
-
-
-def test_non_numeric_total_scores_zero():
-    result = _grade_text('<answer>{"cart": {"CAT": "A1"}, "total": "cheap"}</answer>')
-    assert {'reward': result.reward, 'reason': result.violations[0]} == {
-        'reward': 0.0,
-        'reason': 'parse:total_not_numeric',
-    }
+def test_parse_completion_accepts_exactly_one_block():
+    parsed = parse_completion(_completion({'CAT': 'A1', 'DOG': 'B2'}, 3.50))
+    assert {'ok': parsed.parse_ok, 'total': parsed.total_dollars} == {'ok': True, 'total': 3.5}
 
 
 def test_greedy_trap_scores_below_oracle():
@@ -235,11 +204,6 @@ def test_random_feasible_opts_center_at_zero():
         'n_feasible': 3,
         'c_star_matches': True,
     }
-
-
-def test_parse_completion_accepts_exactly_one_block():
-    parsed = parse_completion(_completion({'CAT': 'A1', 'DOG': 'B2'}, 3.50))
-    assert {'ok': parsed.parse_ok, 'total': parsed.total_dollars} == {'ok': True, 'total': 3.5}
 
 
 def test_degenerate_median_equals_optimum():

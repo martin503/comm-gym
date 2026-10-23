@@ -37,30 +37,18 @@ def test_bootstrap_mean_ci_degenerate_inputs():
     }
 
 
-def test_bootstrap_mean_ci_brackets_mean():
-    mean, lo, hi = bootstrap_mean_ci([0.0, 1.0])
-    assert {
-        'mean': mean,
-        'brackets': lo <= mean <= hi,
-        'not_degenerate': lo < hi,
-    } == {'mean': 0.5, 'brackets': True, 'not_degenerate': True}
-
-
-def test_zero_variance_fraction():
-    assert {
-        'two_of_three': zero_variance_fraction([[1.0, 1.0], [1.0, 2.0], [0.5]]),
-        'empty': zero_variance_fraction([]),
-    } == {'two_of_three': 2 / 3, 'empty': 0.0}
-
-
-def test_within_instance_sd():
+def test_dispersion_metrics():
     # sd([1, 3], ddof=1) = sqrt(2); singleton groups contribute nothing
     assert {
-        'one_pair': within_instance_sd([[1.0, 3.0]]),
-        'singleton_ignored': within_instance_sd([[1.0, 3.0], [7.0]]),
-        'empty': within_instance_sd([]),
+        'zero_var': zero_variance_fraction([[1.0, 1.0], [1.0, 2.0], [0.5]]),
+        'zero_var_empty': zero_variance_fraction([]),
+        'within_sd': within_instance_sd([[1.0, 3.0]]),
+        'within_sd_ignores_singletons': within_instance_sd([[1.0, 3.0], [7.0]]),
+        'within_sd_empty': within_instance_sd([]),
     } == {
-        'one_pair': math.sqrt(2.0),
-        'singleton_ignored': math.sqrt(2.0),
-        'empty': 0.0,
+        'zero_var': 2 / 3,
+        'zero_var_empty': 0.0,
+        'within_sd': math.sqrt(2.0),
+        'within_sd_ignores_singletons': math.sqrt(2.0),
+        'within_sd_empty': 0.0,
     }

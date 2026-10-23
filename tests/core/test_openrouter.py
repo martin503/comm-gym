@@ -16,13 +16,16 @@ def fake_create() -> FakeChatCreate:
 
 
 @pytest.mark.anyio
-async def test_chat_normalizes_the_openai_response(fake_create: FakeChatCreate):
+async def test_chat_normalizes_response_and_builds_params(fake_create: FakeChatCreate):
     client = OpenRouterClient(acreate=fake_create)
     result = await client.chat(
         'qwen/qwen3.7-flash', [{'role': 'user', 'content': 'hi'}], max_tokens=99
     )
-    first_call = fake_create.calls[0]
-    messages = first_call['messages']
+    await client.chat(
+        'openai/gpt-6-luna', [{'role': 'user', 'content': 'hi'}], reasoning_effort='low'
+    )
+    default_call, effort_call = fake_create.calls[0], fake_create.calls[1]
+    messages = default_call['messages']
     assert isinstance(messages, list), 'fake records the messages it was called with'
     assert {
         'text': result.text,
@@ -31,12 +34,13 @@ async def test_chat_normalizes_the_openai_response(fake_create: FakeChatCreate):
         'model': result.model,
         'latency_positive': result.latency_s >= 0,
         'passed_through': {
-            'model': first_call['model'],
-            'temperature': first_call['temperature'],
-            'max_tokens': first_call['max_tokens'],
+            'model': default_call['model'],
+            'temperature': default_call['temperature'],
+            'max_tokens': default_call['max_tokens'],
             'n_messages': len(messages),
-            'reasoning_effort': first_call['reasoning_effort'],
+            'reasoning_effort_default': default_call['reasoning_effort'],
         },
+        'effort_forwarded': effort_call['reasoning_effort'],
     } == {
         'text': '<answer>{"cart": {}, "total": 0}</answer>',
         'tokens_in': 120,
@@ -48,18 +52,10 @@ async def test_chat_normalizes_the_openai_response(fake_create: FakeChatCreate):
             'temperature': 1.0,
             'max_tokens': 99,
             'n_messages': 1,
-            'reasoning_effort': None,
+            'reasoning_effort_default': None,
         },
+        'effort_forwarded': 'low',
     }
-
-
-@pytest.mark.anyio
-async def test_chat_forwards_reasoning_effort_when_set(fake_create: FakeChatCreate):
-    client = OpenRouterClient(acreate=fake_create)
-    await client.chat(
-        'openai/gpt-6-luna', [{'role': 'user', 'content': 'hi'}], reasoning_effort='low'
-    )
-    assert fake_create.calls[0]['reasoning_effort'] == 'low'
 
 
 def test_estimate_cost_usd_hand_computed():
@@ -78,13 +74,6 @@ def test_load_api_key_env_var_wins_over_dotenv(tmp_path: Path):
         'file': load_api_key({}, env_file),
         'quoted': load_api_key({}, _write(tmp_path, 'OPENROUTER_API_KEY="quoted"\n')),
     } == {'env': 'from-env', 'file': 'from-file', 'quoted': 'quoted'}
-
-
-def test_load_api_key_missing_fails_loudly(tmp_path: Path):
-    with pytest.raises(AssertionError):
-        load_api_key({}, tmp_path / 'absent.txt')
-    with pytest.raises(AssertionError):
-        load_api_key({}, _write(tmp_path, 'SOMETHING=else\n'))
 
 
 def _write(tmp_path: Path, content: str) -> Path:

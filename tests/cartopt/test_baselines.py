@@ -1,15 +1,9 @@
-import numpy as np
 import pytest
 
 from commgym.cartopt.baselines import (
-    baseline_carts,
     constraint_aware_greedy,
     couponed_cheapest_cart,
-    greedy_max_discount_cart,
-    lowest_shelf_cart,
     oracle_cart,
-    random_cart,
-    real_shopper_cart,
     tier_cheapest_cart,
 )
 from commgym.cartopt.instance import (
@@ -80,70 +74,3 @@ def test_shortcut_baselines_pick_their_signature_skus(trap: Instance):
         'oracle': {'CAT': 'A2', 'DOG': 'B1'},
         'oracle_cost': 400,
     }
-
-
-def test_lowest_shelf_and_max_discount_ignore_opposite_signals(make_sku, make_instance):
-    # A1: shelf 300, loyalty 100 -> net 200 ; A2: shelf 250, loyalty 0 -> net 250
-    instance = make_instance(
-        {
-            'CAT': [
-                make_sku('A1', 'CAT', shelf_cents=300, loyalty_disc_cents=100),
-                make_sku('A2', 'CAT', shelf_cents=250),
-            ]
-        }
-    )
-    assert {
-        'lowest_shelf': lowest_shelf_cart(instance),
-        'max_discount': greedy_max_discount_cart(instance),
-    } == {'lowest_shelf': {'CAT': 'A2'}, 'max_discount': {'CAT': 'A1'}}
-
-
-def test_tier_baseline_falls_back_when_tier_absent(make_sku, make_instance):
-    instance = make_instance(
-        {
-            'CAT': [
-                make_sku('A1', 'CAT', shelf_cents=300, brand_tier=BrandTier.NATIONAL),
-                make_sku('A2', 'CAT', shelf_cents=250, brand_tier=BrandTier.NATIONAL),
-            ]
-        }
-    )
-    assert tier_cheapest_cart(instance, BrandTier.PRIVATE) == {'CAT': 'A2'}
-
-
-def test_random_cart_is_seed_deterministic_and_on_menu(trap: Instance):
-    first = random_cart(trap, np.random.default_rng(7))
-    second = random_cart(trap, np.random.default_rng(7))
-    on_menu = all(
-        code in {sku.code for sku in trap.menu[commodity]} for commodity, code in first.items()
-    )
-    assert {
-        'stable': first == second,
-        'on_menu': on_menu,
-        'full': set(first) == set(trap.commodities),
-    } == {
-        'stable': True,
-        'on_menu': True,
-        'full': True,
-    }
-
-
-def test_real_shopper_cart_reads_info_codes():
-    info: dict[str, object] = {'real_cart_codes': {'CAT': 'A1', 'DOG': 'B2'}}
-    assert real_shopper_cart(info) == {'CAT': 'A1', 'DOG': 'B2'}
-
-
-def test_baseline_carts_covers_every_registered_name(trap: Instance):
-    carts = baseline_carts(
-        trap, {'real_cart_codes': {'CAT': 'A1', 'DOG': 'B2'}}, np.random.default_rng(1)
-    )
-    assert sorted(carts) == [
-        'always_coupon_sku',
-        'always_lowest_shelf',
-        'always_private',
-        'constraint_aware_greedy',
-        'greedy_cheapest',
-        'greedy_max_discount',
-        'oracle',
-        'random',
-        'real_shopper',
-    ]

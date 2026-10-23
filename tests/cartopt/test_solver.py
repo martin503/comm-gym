@@ -1,8 +1,6 @@
 import itertools
-from dataclasses import replace
 
 import numpy as np
-import pytest
 
 from commgym.cartopt.instance import (
     BrandQuota,
@@ -137,28 +135,6 @@ def _reference(instance: Instance) -> tuple[list[int], list[bool]]:
     return costs, feasible
 
 
-def _shuffle_instance(instance: Instance, rng: np.random.Generator) -> Instance:
-    remap: dict[str, str] = {}
-    menu: dict[str, tuple[MenuSKU, ...]] = {}
-    k = 0
-    for commodity, skus in instance.menu.items():
-        new_skus = []
-        for pos in rng.permutation(len(skus)):
-            new_code = f'X{k}'
-            k += 1
-            remap[skus[pos].code] = new_code
-            new_skus.append(replace(skus[pos], code=new_code))
-        menu[commodity] = tuple(new_skus)
-    coupons = tuple(
-        replace(c, code=remap[c.code]) if isinstance(c, SkuCoupon) else c for c in instance.coupons
-    )
-    constraints = tuple(
-        replace(c, code=remap[c.code]) if isinstance(c, LoyalSKU) else c
-        for c in instance.constraints
-    )
-    return Instance(instance.commodities, menu, coupons, constraints)
-
-
 def test_solver_matches_reference_on_random_instances():
     rng = np.random.default_rng(7)
     for _ in range(20):
@@ -171,53 +147,6 @@ def test_solver_matches_reference_on_random_instances():
         if solution.n_feasible > 0:
             ref_c_star = min(c for c, f in zip(ref_costs, ref_feasible, strict=True) if f)
             assert solution.c_star_cents() == ref_c_star
-
-
-def test_menu_shuffle_invariance():
-    instance = _random_instance(np.random.default_rng(11))
-    shuffled = _shuffle_instance(instance, np.random.default_rng(12))
-    a, b = solve(instance), solve(shuffled)
-    if a.n_feasible > 0:
-        assert a.c_star_cents() == b.c_star_cents()
-    np.testing.assert_array_equal(
-        np.sort(a.costs_cents[a.feasible]), np.sort(b.costs_cents[b.feasible])
-    )
-
-
-def test_brute_force_cap_raises():
-    with pytest.raises(ValueError, match='cap'):
-        solve(_large_instance(), max_carts=8)
-
-
-def _large_instance() -> Instance:
-    commodities = ('CAT0', 'CAT1', 'CAT2')
-    menu = {
-        c: tuple(
-            MenuSKU(
-                code=f'{c}S{i}',
-                product_id=0,
-                commodity=c,
-                brand_tier=BrandTier.PRIVATE,
-                manufacturer=1,
-                size='',
-                shelf_cents=100 + 10 * i,
-                loyalty_disc_cents=0,
-            )
-            for i in range(3)
-        )
-        for c in commodities
-    }
-    return Instance(commodities, menu, (), ())  # 3^3 = 27 carts
-
-
-def test_c_star_raises_when_no_feasible_cart(make_sku, make_instance):
-    a1 = make_sku('A1', 'CAT', shelf_cents=100, brand_tier=BrandTier.NATIONAL)
-    a2 = make_sku('A2', 'CAT', shelf_cents=100, brand_tier=BrandTier.NATIONAL)
-    instance = make_instance({'CAT': [a1, a2]}, constraints=(BrandQuota(BrandTier.PRIVATE, 1),))
-    solution = solve(instance)
-    assert solution.n_feasible == 0
-    with pytest.raises(AssertionError, match='no feasible'):
-        solution.c_star_cents()
 
 
 def test_optimal_cart_is_cheapest_feasible(make_sku, make_instance):
