@@ -15,6 +15,7 @@ authors = [
     { name = "Marcin", email = "m6rcin53@gmail.com" }
 ]
 dependencies = [
+    "anyio>=4.15.1",
     "datasets>=5.1.0",
     "loguru>=0.7.3",
     "numpy>=2.5.4",
@@ -60,5 +61,6 @@ known-first-party = ["cartgym"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+pythonpath = ["tests"]
 addopts = "-v --tb=short"
 

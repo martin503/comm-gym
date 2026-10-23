@@ -229,7 +229,8 @@ Run through the **same reward function** and saved in the same rollout format.
 ## 9. Evaluation (`scripts/run_eval.py`)
 
 ### 9.1 Models
-- **API**: list the models available on the key (`client.models.list()`) and pick 2 tiers, e.g. a nano/mini class and a stronger one. Use a reasoning model with a fixed reasoning effort where available.
+- **API lineup (2026-10-23): `openai/gpt-6-luna` only.** `qwen/qwen3.7-flash` was tried as the cheap tier and dropped: at `max_tokens=2048` it spent all 2048 tokens on reasoning with an empty completion (0/20 parseable), at ~37 s/rollout — slow and effectively more expensive per usable rollout. To revive it: a larger completion budget or thinking disabled via `extra_body`.
+- **Locked sweep protocol (2026-10-23, dev dry runs): temperature 1.0, `reasoning_effort=low`, `max_tokens=8192`.** At default effort + 2048 tokens the L3/L4 headlines (45%/10% exact) were truncation artifacts — every parse failure sat at exactly 2048/2048 output tokens while parsed rollouts went 9/9 exact at L3. Under the locked protocol luna lands at **95% / 55% / 55% / 35% exact-optimal (L1–L4)** with zero parse failures; failures are suboptimal-feasible (mean gaps 11–135¢), quota violations at L2/L4, and a few price-arithmetic slips at L3/L4 — L2–L4 sit in the 30–70% band. Protocol sensitivity is real and reported: L2 moves 95%→55% between default-effort and low-effort runs.
 - **Local**: a current small Qwen3.x instruct model on vLLM on one 3090. This also demonstrates the open-weight path RL would actually train.
 
 ### 9.2 Protocol
@@ -300,6 +301,23 @@ cartgym/
 5. **RL recommendation**: which level and model to train (zero-variance fraction, pass@8 − pass@1 headroom), the top remaining hacking risks, and what to change next.
 
 ---
+
+## 13b. Results — full zero-shot eval (2026-10-23, `eval_unseen`, n=100/level, k=8)
+
+`openai/gpt-6-luna`, temp 1.0, `reasoning_effort=low`, `max_tokens=8192`. 3,200 rollouts, 0 API failures, **$1.52 total spend** (of the $10 key cap; dev dry runs added ~$0.15).
+
+| level | mean reward [95% CI] | pass@1 | pass@4 | pass@8 | feasible | price ok | zero-var inst |
+|---|---|---|---|---|---|---|---|
+| L1 | 0.996 [0.994, 0.998] | 97% | 100% | 100% | 100% | 98% | 77% |
+| L2 | 0.943 [0.929, 0.955] | 69% | 97% | 100% | 97% | 90% | 7% |
+| L3 | 0.945 [0.934, 0.955] | 64% | 95% | 98% | 97% | 87% | 7% |
+| L4 | 0.915 [0.898, 0.930] | 47% | 80% | 86% | 94% | 78% | 3% |
+| L4 (traps) | 0.891 [0.871, 0.910] | 38% | 72% | 80% | 91% | 72% | 1% |
+
+- **L2–L4 sit in the 30–70% pass@1 band** — the level-design goal, at the level the sweep was tuned for. L4 traps (38%) are the deepest point; pass@8 86% shows the optimum is reachable but not reliable — the RL-relevant regime.
+- **Zero-variance fraction collapses from 77% (L1) to ≤7% (L2–L4)** — L2–L4 give GRPO-style advantage signal on nearly every instance; L1 is warm-up only.
+- Failure taxonomy is level-graded with **zero parse failures anywhere**: suboptimal-feasible dominates and grows (24 → 201 → 225 → 301), arithmetic (price-report) slips grow with menu size (12 → 55 → 84 → 130), quota violations appear from L2 (22–50).
+- Baseline anchor (dev): constraint-aware greedy 0.94–0.95 mean reward, 37–50% exact — luna's L4 pass@1 (47%) sits right at that anchor; the LLM needs the trap stratum (38%) to differentiate.
 
 ## 14. Assumptions and Open Decisions
 - **Objective = minimize out-of-pocket total** under hard constraints. Alternative, kept ready as a config switch in case "an assumption changes" onsite: *maximize a household preference score subject to a budget cap*. That turns it into a knapsack and uses history more heavily.

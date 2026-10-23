@@ -184,7 +184,8 @@ def generate_batch(
     used: set[int] = set()
     fingerprints: set[tuple[object, ...]] = set()
     accepted: list[GeneratedInstance] = []
-    for attempt in range(50 * n + 200):
+    # plain (non-trap) instances are rare at high levels, so the guard must stay loose
+    for attempt in range(150 * n + 500):
         if needs['trap'] == 0 and needs['plain'] == 0:
             break
         stats['attempts'] += 1

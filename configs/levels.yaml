@@ -14,6 +14,18 @@ levels:
     sku_coupons: [2, 3]
     threshold_bundles: 1
     brand_quota: true
+  L3:
+    categories: 6
+    skus_per_category: 4
+    sku_coupons: [2, 4]
+    threshold_bundles: 2
+    brand_quota: true
+  L4:
+    categories: 8
+    skus_per_category: 5
+    sku_coupons: [3, 5]
+    threshold_bundles: 3
+    brand_quota: true
 tie_eps_cents: 1
 near_tie_delta_cents: 10
 trap_rate: 0.70

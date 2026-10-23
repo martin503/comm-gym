@@ -20,6 +20,24 @@
 | L2 | oracle | 1.000 | 1.000 | 100% | 100% | 0.00 |
 | L2 | random | 0.490 | 0.447 | 57% | 0% | 6.00 |
 | L2 | real_shopper | 0.546 | 0.535 | 70% | 0% | 6.08 |
+| L3 | always_coupon_sku | 0.539 | 0.439 | 50% | 3% | 1.56 |
+| L3 | always_lowest_shelf | 0.445 | 0.320 | 27% | 13% | 0.89 |
+| L3 | always_private | 0.328 | 0.263 | 10% | 3% | 1.92 |
+| L3 | constraint_aware_greedy | 0.951 | 0.930 | 100% | 50% | 0.75 |
+| L3 | greedy_cheapest | 0.548 | 0.354 | 40% | 30% | 0.68 |
+| L3 | greedy_max_discount | 0.507 | 0.473 | 57% | 0% | 6.33 |
+| L3 | oracle | 1.000 | 1.000 | 100% | 100% | 0.00 |
+| L3 | random | 0.418 | 0.421 | 40% | 0% | 5.14 |
+| L3 | real_shopper | 0.499 | 0.457 | 53% | 0% | 5.09 |
+| L4 | always_coupon_sku | 0.521 | 0.401 | 40% | 7% | 1.34 |
+| L4 | always_lowest_shelf | 0.434 | 0.301 | 23% | 10% | 1.53 |
+| L4 | always_private | 0.293 | 0.270 | 3% | 0% | 2.10 |
+| L4 | constraint_aware_greedy | 0.939 | 0.913 | 100% | 37% | 1.35 |
+| L4 | greedy_cheapest | 0.531 | 0.331 | 37% | 30% | 1.11 |
+| L4 | greedy_max_discount | 0.521 | 0.475 | 63% | 0% | 8.27 |
+| L4 | oracle | 1.000 | 1.000 | 100% | 100% | 0.00 |
+| L4 | random | 0.534 | 0.535 | 67% | 0% | 8.84 |
+| L4 | real_shopper | 0.548 | 0.547 | 67% | 0% | 9.35 |
 
 ## Shortcut gate (each must sit below constraint-aware greedy)
 
@@ -29,3 +47,9 @@
 - L2 / always_private: PASS
 - L2 / always_coupon_sku: PASS
 - L2 / always_lowest_shelf: PASS
+- L3 / always_private: PASS
+- L3 / always_coupon_sku: PASS
+- L3 / always_lowest_shelf: PASS
+- L4 / always_private: PASS
+- L4 / always_coupon_sku: PASS
+- L4 / always_lowest_shelf: PASS
