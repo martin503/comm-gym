@@ -4,10 +4,18 @@ import pytest
 from _mocks.fake_openai import FakeChatCreate
 
 from commgym.core.openrouter import (
+    BASE_URL,
     OpenRouterClient,
     estimate_cost_usd,
     load_api_key,
 )
+
+
+def test_base_url_defaults_to_openrouter_and_is_overridable():
+    assert {
+        'default': OpenRouterClient(api_key='k').base_url,
+        'local': OpenRouterClient(api_key='k', base_url='http://localhost:8000/v1').base_url,
+    } == {'default': BASE_URL, 'local': 'http://localhost:8000/v1'}
 
 
 @pytest.fixture

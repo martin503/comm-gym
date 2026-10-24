@@ -44,13 +44,27 @@ def load_api_key(env: Mapping[str, str], env_path: Path) -> str:
 class OpenRouterClient:
     """Thin async wrapper: one chat call, normalized with token usage and latency."""
 
-    def __init__(self, api_key: str | None = None, *, acreate: ChatCreate | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        *,
+        base_url: str = BASE_URL,
+        acreate: ChatCreate | None = None,
+    ) -> None:
+        self._base_url = base_url
         if acreate is None:
             assert api_key is not None, 'live calls need the OpenRouter API key'
-            client = AsyncOpenAI(api_key=api_key, base_url=BASE_URL, timeout=90.0, max_retries=3)
+            client = AsyncOpenAI(
+                api_key=api_key, base_url=self._base_url, timeout=90.0, max_retries=3
+            )
             self._acreate: ChatCreate = client.chat.completions.create
         else:
             self._acreate = acreate
+
+    @property
+    def base_url(self) -> str:
+        """Endpoint in use; local judges override it, OpenRouter is the default."""
+        return self._base_url
 
     async def chat(
         self,

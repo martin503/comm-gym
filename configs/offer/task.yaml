@@ -1,0 +1,13 @@
+level_sizes:
+  L1: 5
+  L2: 10
+  L3: 20
+relevant_coupons: 3
+coupon_top_commodities: 3
+profile_top_commodities: 10
+history_days: 98
+ends_soon_days: 7
+min_anchor_gap_days: 14
+max_instances_per_hh: 3
+tier_dominance: 0.8
+use_demographics: false
