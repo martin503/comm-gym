@@ -13,70 +13,46 @@ def _client(replies: list[str]) -> tuple[OpenRouterClient, FakeScriptedChatCreat
     return OpenRouterClient(acreate=fake), fake
 
 
-@pytest.mark.anyio
-async def test_both_orders_average_to_candidate_win():
-    client, fake = _client(['A', 'A'])
-    outcome = await judge_pair(
+async def _pair(
+    client: OpenRouterClient, candidate: str = 'm1', reference: str = 'm2'
+) -> JudgeOutcome:
+    return await judge_pair(
         client,
         CFG,
         context_prompt='ctx',
         candidate_selection=('k01',),
-        candidate_message='candidate message about milk',
+        candidate_message=candidate,
         reference_selection=('k02',),
-        reference_message='reference message about pizza',
+        reference_message=reference,
     )
+
+
+@pytest.mark.anyio
+async def test_judge_pair_averages_both_orders_and_recovers():
+    client, _ = _client(['A', 'A'])
+    split = await _pair(client, candidate='candidate message about milk')
+    won = await _pair(_client(['A', 'B'])[0])
+    lost = await _pair(_client(['B', 'A'])[0])
+    error_client, error_fake = _client(['garbage', 'A', 'garbage', 'garbage'])
+    errored = await _pair(error_client)
     assert {
-        'win': outcome.judge_win,
-        'orders': outcome.order_scores,
-        'error': outcome.error,
-        'calls': len(fake.calls),
-    } == {'win': 0.5, 'orders': (1.0, 0.0), 'error': None, 'calls': 2}
-
-
-@pytest.mark.anyio
-async def test_clean_sweep_and_clean_loss():
-    client, _ = _client(['A', 'B'])
-    won = await judge_pair(
-        client,
-        CFG,
-        context_prompt='ctx',
-        candidate_selection=('k01',),
-        candidate_message='m1',
-        reference_selection=('k02',),
-        reference_message='m2',
-    )
-    client2, _ = _client(['B', 'A'])
-    lost = await judge_pair(
-        client2,
-        CFG,
-        context_prompt='ctx',
-        candidate_selection=('k01',),
-        candidate_message='m1',
-        reference_selection=('k02',),
-        reference_message='m2',
-    )
-    assert {'won': won.judge_win, 'lost': lost.judge_win} == {'won': 1.0, 'lost': 0.0}
-
-
-@pytest.mark.anyio
-async def test_unparseable_verdict_retries_then_errors():
-    client, fake = _client(['garbage', 'A', 'garbage', 'garbage'])
-    outcome = await judge_pair(
-        client,
-        CFG,
-        context_prompt='ctx',
-        candidate_selection=('k01',),
-        candidate_message='m1',
-        reference_selection=('k02',),
-        reference_message='m2',
-    )
-    assert {'error': outcome.error, 'calls': len(fake.calls)} == {
+        'split_win': split.judge_win,
+        'split_orders': split.order_scores,
+        'clean_sweep': won.judge_win,
+        'clean_loss': lost.judge_win,
+        'error': errored.error,
+        'retry_calls': len(error_fake.calls),
+    } == {
+        'split_win': 0.5,
+        'split_orders': (1.0, 0.0),
+        'clean_sweep': 1.0,
+        'clean_loss': 0.0,
         'error': 'unparseable_verdict',
-        'calls': 4,
+        'retry_calls': 4,
     }
 
 
-def test_parse_verdict_first_word_then_fallback():
+def test_verdict_parsing_first_word_then_fallback():
     assert {
         'first_line': parse_verdict('B — clearer and more specific.'),
         'tie': parse_verdict('TIE\nboth are fine'),

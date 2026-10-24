@@ -42,30 +42,28 @@ def _instance() -> OfferInstance:
     )
 
 
-def test_system_prompt_states_contract_and_limit():
-    system = system_prompt(40)
-    assert {'limit': 'at most 40 words' in system, 'contract': '<answer>' in system} == {
-        'limit': True,
-        'contract': True,
-    }
-
-
-def test_user_prompt_renders_profile_coupons_and_is_stable():
+def test_prompts_state_contract_and_render_stable_level_tables():
     instance = _instance()
+    system = system_prompt(40)
     prompt = user_prompt(instance, 'L2', LEXICON)
     l1 = user_prompt(instance, 'L1', LEXICON)
     assert {
+        # the prompt must keep stating the contract the parser enforces
+        'contract': '<answer>' in system,
+        'limit': 'at most 40 words' in system,
         'display_name': 'Fluid Milk' in prompt,
         'profile': '31%' in prompt,
         'ends_soon': 'ends soon' in prompt,
         'codes': {'k01', 'k03', 'k05'} <= set(prompt.split()),
         'stable': prompt == user_prompt(instance, 'L2', LEXICON),
-        'l1_codes_only': {'k04', 'k05'}.isdisjoint(set(l1.split())),
+        'l1_excludes_later_codes': {'k04', 'k05'}.isdisjoint(set(l1.split())),
     } == {
+        'contract': True,
+        'limit': True,
         'display_name': True,
         'profile': True,
         'ends_soon': True,
         'codes': True,
         'stable': True,
-        'l1_codes_only': True,
+        'l1_excludes_later_codes': True,
     }
