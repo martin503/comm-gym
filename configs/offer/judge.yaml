@@ -1,0 +1,6 @@
+model: anthropic/claude-haiku-5.5
+temperature: 0.0
+max_tokens: 8192
+reasoning_effort: null
+agreement_model: null
+agreement_share: 0.1
