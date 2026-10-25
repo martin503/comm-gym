@@ -256,7 +256,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--refs', type=Path, default=None, help='defaults to instances/offer/<split>.refs.jsonl'
     )
-    parser.add_argument('--report', type=Path, default=Path('reports/offer_judge_reliability.md'))
+    parser.add_argument(
+        '--report', type=Path, default=Path('reports/offer/offer_judge_reliability.md')
+    )
     parser.add_argument('--env-file', type=Path, default=Path('.env'))
     args = parser.parse_args()
     if args.refs is None:

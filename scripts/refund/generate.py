@@ -394,7 +394,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument('--splits-config', type=Path, default=Path('configs/splits.yaml'))
     parser.add_argument('--out-dir', type=Path, default=Path('instances/refund_v4'))
     parser.add_argument(
-        '--preview', type=Path, default=Path('reports/refund_instances_preview_v4.md')
+        '--preview', type=Path, default=Path('reports/refund/refund_instances_preview_v4.md')
     )
     parser.add_argument('--preview-n', type=int, default=10)
     return parser.parse_args()

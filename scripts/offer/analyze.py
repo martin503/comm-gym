@@ -194,7 +194,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument('--reward-config', type=Path, default=Path('configs/offer/reward.yaml'))
     parser.add_argument('--rollouts-dir', type=Path, default=Path('rollouts/offer'))
-    parser.add_argument('--report', type=Path, default=Path('reports/offer_eval_report.md'))
+    parser.add_argument('--report', type=Path, default=Path('reports/offer/offer_eval_report.md'))
     args = parser.parse_args()
     args.levels = [level.strip() for level in args.levels.split(',')]
     args.models = [m.strip() for m in args.models.split(',') if m.strip()]

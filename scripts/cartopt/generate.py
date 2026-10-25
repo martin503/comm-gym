@@ -98,7 +98,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument('--pricing-config', type=Path, default=Path('configs/pricing.yaml'))
     parser.add_argument('--splits-config', type=Path, default=Path('configs/splits.yaml'))
     parser.add_argument('--out-dir', type=Path, default=Path('instances/cartopt'))
-    parser.add_argument('--preview', type=Path, default=Path('reports/instances_preview.md'))
+    parser.add_argument(
+        '--preview', type=Path, default=Path('reports/cartopt/instances_preview.md')
+    )
     parser.add_argument('--preview-n', type=int, default=20)
     args = parser.parse_args()
     args.levels = [level.strip() for level in args.levels.split(',')]

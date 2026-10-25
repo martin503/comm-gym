@@ -103,7 +103,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--reward-config', type=Path, default=Path('configs/cartopt/reward.yaml'))
     parser.add_argument('--instances-dir', type=Path, default=Path('instances/cartopt'))
-    parser.add_argument('--report', type=Path, default=Path('reports/baselines.md'))
+    parser.add_argument('--report', type=Path, default=Path('reports/cartopt/baselines.md'))
     args = parser.parse_args()
     args.levels = [level.strip() for level in args.levels.split(',')]
     return args

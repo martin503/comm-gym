@@ -129,7 +129,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument('--commodities', type=Path, default=Path('configs/offer/commodities.txt'))
     parser.add_argument('--instances-dir', type=Path, default=Path('instances/offer'))
     parser.add_argument('--rollouts-dir', type=Path, default=Path('rollouts/offer'))
-    parser.add_argument('--report', type=Path, default=Path('reports/offer_baselines.md'))
+    parser.add_argument('--report', type=Path, default=Path('reports/offer/offer_baselines.md'))
     args = parser.parse_args()
     args.levels = [level.strip() for level in args.levels.split(',')]
     return args

@@ -88,7 +88,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument('--cleaning-config', type=Path, default=Path('configs/data.yaml'))
     parser.add_argument('--splits-config', type=Path, default=Path('configs/splits.yaml'))
     parser.add_argument('--out-dir', type=Path, default=Path('instances/offer'))
-    parser.add_argument('--preview', type=Path, default=Path('reports/offer_instances_preview.md'))
+    parser.add_argument(
+        '--preview', type=Path, default=Path('reports/offer/offer_instances_preview.md')
+    )
     parser.add_argument('--preview-n', type=int, default=10)
     return parser.parse_args()
 

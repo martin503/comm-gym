@@ -217,7 +217,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument('--max-tokens', type=int, default=8192)
     parser.add_argument('--reasoning-effort', default='low')
     parser.add_argument('--rollouts-dir', type=Path, default=Path('rollouts/cartopt'))
-    parser.add_argument('--report', type=Path, default=Path('reports/eval_report.md'))
+    parser.add_argument('--report', type=Path, default=Path('reports/cartopt/eval_report.md'))
     args = parser.parse_args()
     args.models = [m.strip() for m in args.models.split(',')]
     args.levels = [level.strip() for level in args.levels.split(',')]

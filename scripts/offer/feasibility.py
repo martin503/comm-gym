@@ -295,7 +295,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument('--task-config', type=Path, default=Path('configs/offer/task.yaml'))
     parser.add_argument('--cleaning-config', type=Path, default=Path('configs/data.yaml'))
     parser.add_argument('--splits-config', type=Path, default=Path('configs/splits.yaml'))
-    parser.add_argument('--out', type=Path, default=Path('reports/offer_feasibility.md'))
+    parser.add_argument('--out', type=Path, default=Path('reports/offer/offer_feasibility.md'))
     parser.add_argument(
         '--commodities-out',
         type=Path,

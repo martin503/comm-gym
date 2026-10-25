@@ -496,7 +496,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument('--reasoning-effort', default='low')
     parser.add_argument('--rollouts-dir', type=Path, default=Path('rollouts/refund_v4'))
     parser.add_argument('--instances-dir', type=Path, default=Path('instances/refund_v4'))
-    parser.add_argument('--report', type=Path, default=Path('reports/refund_eval_report_v4.md'))
+    parser.add_argument(
+        '--report', type=Path, default=Path('reports/refund/refund_eval_report_v4.md')
+    )
     args = parser.parse_args()
     args.models = [m.strip() for m in args.models.split(',')]
     args.levels = [level.strip() for level in args.levels.split(',')]

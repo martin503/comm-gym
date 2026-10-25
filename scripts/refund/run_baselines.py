@@ -143,7 +143,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument('--train-level', default='L3')
     parser.add_argument('--reward-config', type=Path, default=Path('configs/refund/reward.yaml'))
     parser.add_argument('--instances-dir', type=Path, default=Path('instances/refund_v4'))
-    parser.add_argument('--report', type=Path, default=Path('reports/refund_baselines_v4.md'))
+    parser.add_argument(
+        '--report', type=Path, default=Path('reports/refund/refund_baselines_v4.md')
+    )
     args = parser.parse_args()
     args.levels = [level.strip() for level in args.levels.split(',')]
     return args
