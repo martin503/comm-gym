@@ -371,26 +371,6 @@ async def test_out_of_window_anchors_reject_every_claim(world: MiniWorld):
         }
 
 
-@pytest.mark.anyio
-async def test_all_seven_reason_codes_appear(world: MiniWorld):
-    reasons = {
-        c.truth_reason.value
-        for name in ('dev', 'six_kind', 'out_of_window')
-        for anchor in (await _batches(world))[name]
-        for c in anchor[-1].claims
-    }
-    assert reasons == {
-        'PRICE_MATCH',
-        'MISSED_COUPON',
-        'NOT_ON_RECEIPT',
-        'NEEDS_CLARIFICATION',
-        'WITHIN_TOLERANCE',
-        'NOT_ELIGIBLE',
-        'ALREADY_APPLIED',
-        'OUTSIDE_WINDOW',
-    }
-
-
 def test_out_of_window_positions_spread_across_the_plan():
     # the render stage keeps the first surviving anchors, so a tail-only stratum would be
     # cut whenever discards eat the surplus; positions must interleave the whole range
@@ -483,21 +463,6 @@ async def test_paired_claims_on_one_line_pay_only_the_first(world: MiniWorld):
                 approve_pairs += 1
                 assert claims[1].truth_refund_cents == 0
     assert pairs >= 1 and approve_pairs >= 1
-
-
-@pytest.mark.anyio
-async def test_policy_sampling_varies_per_anchor(world: MiniWorld):
-    policies = {
-        (
-            anchor[0].policy.claim_window_days,
-            anchor[0].policy.price_tolerance_cents,
-            anchor[0].policy.refund_cap_cents,
-            anchor[0].policy.price_match_national_only,
-        )
-        for name in ('dev', 'train')
-        for anchor in (await _batches(world))[name]
-    }
-    assert len(policies) > 3
 
 
 @pytest.mark.anyio

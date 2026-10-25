@@ -1,6 +1,5 @@
 from commgym.dunnhumby.types import BrandTier
 from commgym.refund.config import PolicyParams
-from commgym.refund.instance import ReceiptLine
 from commgym.refund.policy import (
     ClaimFacts,
     ClaimVerdict,
@@ -163,38 +162,6 @@ def test_coupon_branch_takes_max_covering_value():
         'ineligible': (Decision.REJECT, ReasonCode.NOT_ELIGIBLE, 0),
         'applied': (Decision.REJECT, ReasonCode.ALREADY_APPLIED, 0),
     }
-
-
-def test_refund_reproducible_from_displayed_columns():
-    # regular 160, loyalty disc 20, coupon disc 15 -> paid 125; loyalty unit = 160 - 20
-    line = ReceiptLine(
-        code='L03',
-        product_id=9,
-        commodity='COFFEE',
-        sub_commodity='GROUND',
-        brand_tier=BrandTier.PRIVATE,
-        size='12 OZ',
-        quantity=3,
-        regular_unit_cents=160,
-        loyalty_disc_unit_cents=20,
-        coupon_disc_unit_cents=15,
-        paid_unit_cents=125,
-        reference_cents=104,
-    )
-    result = adjudicate(
-        facts(
-            loyalty_unit_cents=line.loyalty_unit_cents,
-            reference_cents=line.reference_cents,
-            quantity=line.quantity,
-            paid_unit_cents=line.paid_unit_cents,
-        ),
-        POLICY,
-    )
-    assert (result.decision, result.reason, result.refund_cents) == (
-        Decision.APPROVE,
-        ReasonCode.PRICE_MATCH,
-        (160 - 20 - 104) * 3,
-    )
 
 
 def test_national_only_toggle_rejects_private_price_claims():

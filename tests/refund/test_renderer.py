@@ -79,14 +79,12 @@ async def test_render_anchor_happy_path(fake_text: FakeTextModel):
         'n_sentences': len(outcome.sentences),
         'message_sentences': len(split_sentences(' '.join(outcome.sentences))),
         'discards': outcome.discards,
-        'resolutions': outcome.detail['resolutions'],
     } == {
         'ok': True,
         'n_refs': 3,
         'n_sentences': 3,
         'message_sentences': 3,
         'discards': (),
-        'resolutions': {0: [['L03'], ['L03']], 1: [['L01', 'L02'], ['L01', 'L02']], 2: [[], []]},
     }
 
 

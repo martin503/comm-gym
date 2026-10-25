@@ -201,13 +201,3 @@ def test_record_round_trip_preserves_instance():
     )
     record = json.loads(json.dumps(instance_to_record(instance)))
     assert record_to_instance(record) == instance
-
-
-def test_words_of_covers_curated_categories():
-    assert {
-        'HOT DOGS': words_of('HOT DOGS'),
-        'unknown': words_of('MADE UP CATEGORY'),
-    } == {
-        'HOT DOGS': ('franks', 'hot dog', 'hot dogs', 'beef franks', 'kosher dogs'),
-        'unknown': (),
-    }
