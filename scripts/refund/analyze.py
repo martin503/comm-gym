@@ -7,19 +7,17 @@ from pathlib import Path
 import numpy as np
 from loguru import logger
 
+from commgym.core.cli import comma_list, write_report
+from commgym.core.config import load_models
+from commgym.core.eval import select_models
 from commgym.core.logging import setup_logging
-from commgym.core.stats import (
-    bootstrap_mean_ci,
-    pass_at_k,
-    within_instance_sd,
-    zero_variance_fraction,
-)
+from commgym.core.rollouts import read_jsonl, rollouts_path
+from commgym.core.stats import instance_stats
 from commgym.refund.baselines import prompt_view_of, rule_parser_answers
 from commgym.refund.config import RewardConfig
 from commgym.refund.instance import record_to_instance
 from commgym.refund.reward import grade_parsed
 
-PASS_KS = (1, 4, 8)
 REASONS = (
     'OUTSIDE_WINDOW',
     'NOT_ON_RECEIPT',
@@ -79,28 +77,15 @@ class Rollout:
 def main() -> None:
     args = _parse_args()
     setup_logging()
-    params: dict[str, object] = {
-        'temperature': args.temperature,
-        'max_tokens': args.max_tokens,
-        'reasoning_effort': args.reasoning_effort,
-    }
-    sections = [
-        f'# Refund eval report — {args.split}',
-        '',
-        f'Sampling params: `{params}`',
-        '',
-        *LEVEL_LEVER_NOTE,
-    ]
-    for model in args.models:
-        sections += [f'## {model}', '']
-        sections += _model_sections(args, model, params)
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text('\n'.join(sections) + '\n')
-    logger.info('report written to {}', args.report)
+    models = select_models(load_models(args.config), args.models)
+    sections = ['# Refund eval report — ' + args.split, '', *LEVEL_LEVER_NOTE]
+    for model, params in models.items():
+        sections += [f'## {model}', '', f'Sampling params: `{params.sampling_params()}`', '']
+        sections += _model_sections(args, model, params.sampling_params())
+    write_report(args.report, sections)
 
 
 def _model_sections(args: argparse.Namespace, model: str, params: dict[str, object]) -> list[str]:
-    model_dir = args.rollouts_dir / model.replace('/', '__')
     per_level: dict[str, list[Rollout]] = {}
     lines = [
         '| level | stratum | inst | mean reward [95% CI] | pass@1 | pass@4 | pass@8 '
@@ -108,7 +93,7 @@ def _model_sections(args: argparse.Namespace, model: str, params: dict[str, obje
         '|---|---|---|---|---|---|---|---|---|---|',
     ]
     for level in args.levels:
-        records = _load_records(model_dir / f'{args.split}_{level}.jsonl', params)
+        records = _load_records(rollouts_path(args.rollouts_dir, model, args.split, level), params)
         if not records:
             logger.warning('{} {}: no rollouts for {}', model, level, params)
             continue
@@ -117,12 +102,13 @@ def _model_sections(args: argparse.Namespace, model: str, params: dict[str, obje
             subset = records if stratum == 'all' else [r for r in records if r.stratum == stratum]
             if not subset:
                 continue
-            stats = _instance_stats(subset)
+            stats = instance_stats(*_groups(subset))
+            parse_ok = sum(1 for r in subset if r.parse_ok) / len(subset)
             lines.append(
                 f'| {level} | {stratum} | {stats.n_instances} '
                 f'| {stats.reward_mean:.3f} [{stats.reward_lo:.3f}, {stats.reward_hi:.3f}] '
                 f'| {_pct(stats.pass_at[1])} | {_pct(stats.pass_at[4])} '
-                f'| {_pct(stats.pass_at[8])} | {stats.parse_ok:.0%} '
+                f'| {_pct(stats.pass_at[8])} | {parse_ok:.0%} '
                 f'| {stats.zero_var:.0%} | {stats.within_sd:.3f} |'
             )
     if not per_level:
@@ -152,8 +138,7 @@ def _load_records(path: Path, params: dict[str, object]) -> list[Rollout]:
     if not path.is_file():
         return []
     rollouts: list[Rollout] = []
-    for line in path.read_text().splitlines():
-        record = json.loads(line)
+    for record in read_jsonl(path):
         if record.get('sampling_params') != params:
             continue
         components = record['components']
@@ -192,46 +177,43 @@ def _load_records(path: Path, params: dict[str, object]) -> list[Rollout]:
         rollouts.append(
             Rollout(
                 instance_id=str(record['instance_id']),
-                rollout_idx=int(record['rollout_idx']),
+                rollout_idx=_int(record, 'rollout_idx'),
                 stratum=str(record['stratum']),
-                reward=float(record['reward']),
+                reward=_float(record, 'reward'),
                 parse_ok=bool(components['parse_ok']),
-                parse_reason=record['parse_reason'],
+                parse_reason=_parse_reason(record),
                 claims=claims,
             )
         )
     return rollouts
 
 
-@dataclass(frozen=True, slots=True)
-class Stats:
-    n_instances: int
-    reward_mean: float
-    reward_lo: float
-    reward_hi: float
-    pass_at: dict[int, float | None]
-    parse_ok: float
-    zero_var: float
-    within_sd: float
+def _int(record: dict[str, object], key: str) -> int:
+    value = record[key]
+    assert isinstance(value, int), f'{key} must be an int'
+    return value
 
 
-def _instance_stats(records: list[Rollout]) -> Stats:
+def _float(record: dict[str, object], key: str) -> float:
+    value = record[key]
+    assert isinstance(value, int | float), f'{key} must be numeric'
+    return float(value)
+
+
+def _parse_reason(record: dict[str, object]) -> str | None:
+    value = record['parse_reason']
+    assert value is None or isinstance(value, str), 'parse_reason must be text or null'
+    return value
+
+
+def _groups(records: list[Rollout]) -> tuple[list[list[float]], list[list[bool]]]:
     by_instance: dict[str, list[Rollout]] = defaultdict(list)
     for record in records:
         by_instance[record.instance_id].append(record)
     groups = list(by_instance.values())
-    reward_groups = [[r.reward for r in group] for group in groups]
-    success_groups = [[r.reward == 1.0 for r in group] for group in groups]
-    mean, lo, hi = bootstrap_mean_ci([float(np.mean(group)) for group in reward_groups])
-    return Stats(
-        n_instances=len(groups),
-        reward_mean=mean,
-        reward_lo=lo,
-        reward_hi=hi,
-        pass_at={k: pass_at_k(success_groups, k) for k in PASS_KS},
-        parse_ok=sum(1 for r in records if r.parse_ok) / len(records),
-        zero_var=zero_variance_fraction(reward_groups),
-        within_sd=within_instance_sd(reward_groups),
+    return (
+        [[r.reward for r in group] for group in groups],
+        [[r.reward == 1.0 for r in group] for group in groups],
     )
 
 
@@ -455,10 +437,10 @@ def _decision_inputs(per_level: dict[str, list[Rollout]], deepest: list[Rollout]
     taxonomy = _claim_taxonomy(claims)
     failures = sum(count for key, count in taxonomy.items() if key != 'correct')
     saturation = all(
-        _instance_stats(records).reward_mean >= 0.95 for records in per_level.values()
+        instance_stats(*_groups(records)).reward_mean >= 0.95 for records in per_level.values()
     )
     high_zero_var = {
-        level: _instance_stats(records).zero_var for level, records in per_level.items()
+        level: instance_stats(*_groups(records)).zero_var for level, records in per_level.items()
     }
     false_approves = sum(1 for claim in claims if claim.false_approve)
     false_rejects = sum(1 for claim in claims if claim.false_reject)
@@ -488,21 +470,20 @@ def _pct(value: float | None) -> str:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Analyze saved refund rollouts of one split')
-    parser.add_argument('--models', required=True, help='comma-separated OpenRouter model ids')
+    parser.add_argument(
+        '--config', type=Path, default=Path('configs/refund/models.yaml'), help='models config'
+    )
+    parser.add_argument(
+        '--models', type=comma_list, default=[], help='subset of configured models (default: all)'
+    )
     parser.add_argument('--split', default='eval_unseen')
-    parser.add_argument('--levels', default='L2')
-    parser.add_argument('--temperature', type=float, default=1.0)
-    parser.add_argument('--max-tokens', type=int, default=4096)
-    parser.add_argument('--reasoning-effort', default='low')
+    parser.add_argument('--levels', type=comma_list, default=['L2'])
     parser.add_argument('--rollouts-dir', type=Path, default=Path('rollouts/refund_v4'))
     parser.add_argument('--instances-dir', type=Path, default=Path('instances/refund_v4'))
     parser.add_argument(
         '--report', type=Path, default=Path('reports/refund/refund_eval_report_v4.md')
     )
-    args = parser.parse_args()
-    args.models = [m.strip() for m in args.models.split(',')]
-    args.levels = [level.strip() for level in args.levels.split(',')]
-    return args
+    return parser.parse_args()
 
 
 if __name__ == '__main__':

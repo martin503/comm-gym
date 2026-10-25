@@ -196,3 +196,23 @@ def grade(
 def final_reward(prefix_reward: float, judge_win: float, cfg: RewardConfig) -> float:
     """Compose the stored prefix with the judged win rate; clamped to [0, 1]."""
     return max(0.0, min(1.0, prefix_reward + cfg.w_judge * judge_win))
+
+
+def components_of(graded: OfferGrade, instance: OfferInstance, level: str) -> dict[str, object]:
+    """Rollout-record components shared by the eval grader and the baselines writer."""
+    shown = {coupon.code: coupon for coupon in instance.slice_for(level)}
+    return {
+        'gate_pass': graded.gate_passed,
+        'parse_ok': graded.parse_ok,
+        'gate_failures': list(graded.failures),
+        'affinity': graded.affinity,
+        'word_count': graded.word_count,
+        'n_selected': len(graded.selected),
+        'selected': list(graded.selected),
+        'message': graded.message,
+        'coupon_keys': {
+            code: [coupon.campaign, coupon.coupon_upc]
+            for code, coupon in shown.items()
+            if code in graded.selected
+        },
+    }

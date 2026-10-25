@@ -20,19 +20,16 @@ from commgym.core.openrouter import (
     fetch_model_prices,
     load_api_key,
 )
-from commgym.dunnhumby.clean import prepare_transactions
 from commgym.dunnhumby.config import CleaningConfig, PricingConfig, SplitsConfig
+from commgym.dunnhumby.context import load_context
 from commgym.dunnhumby.load import (
     load_campaign_targeting,
     load_campaigns,
     load_coupon_eligibility,
     load_coupon_redemptions,
-    load_demographics,
-    load_products,
-    load_transactions,
 )
 from commgym.dunnhumby.prices import PricePoint, build_price_table
-from commgym.dunnhumby.splits import Splits, build_splits
+from commgym.dunnhumby.splits import Splits
 from commgym.refund.config import TaskConfig
 from commgym.refund.coupons import CouponIndex, build_coupon_index
 from commgym.refund.generator import (
@@ -307,9 +304,11 @@ def _write_discard_report(split: str, discards: Counter[tuple[str, str]]) -> Non
 def _load(
     args: argparse.Namespace, cfg: TaskConfig
 ) -> tuple[pd.DataFrame, dict[tuple[int, int], PricePoint], CouponIndex, Splits, tuple]:
-    products = load_products(args.data_dir)
-    tx = load_transactions(args.data_dir)
-    txc, _ = prepare_transactions(tx, products, load_config(CleaningConfig, args.cleaning_config))
+    products, txc, splits = load_context(
+        args.data_dir,
+        load_config(CleaningConfig, args.cleaning_config),
+        load_config(SplitsConfig, args.splits_config),
+    )
     product_sizes = pd.DataFrame(
         {'product_id': [p.product_id for p in products], 'size': [p.size for p in products]}
     )
@@ -325,13 +324,6 @@ def _load(
         load_coupon_redemptions(args.data_dir),
         txc,
         min_redemptions=cfg.min_redemptions,
-    )
-    demographics = {d.household_key for d in load_demographics(args.data_dir)}
-    coverage = (
-        txc.groupby(['commodity', 'WEEK_NO']).agg(n_skus=('PRODUCT_ID', 'nunique')).reset_index()
-    )
-    splits = build_splits(
-        txc, demographics, coverage, load_config(SplitsConfig, args.splits_config)
     )
     return txc, prices, coupons, splits, campaigns
 

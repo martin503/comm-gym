@@ -8,20 +8,13 @@ from loguru import logger
 
 from commgym.core.config import load_config
 from commgym.core.logging import setup_logging
-from commgym.dunnhumby.clean import prepare_transactions
 from commgym.dunnhumby.config import CleaningConfig, SplitsConfig
-from commgym.dunnhumby.load import (
-    data_dir as default_data_dir,
-)
+from commgym.dunnhumby.context import load_context
 from commgym.dunnhumby.load import (
     load_campaign_targeting,
     load_campaigns,
     load_coupon_eligibility,
-    load_demographics,
-    load_products,
-    load_transactions,
 )
-from commgym.dunnhumby.splits import build_splits
 from commgym.offer.config import TaskConfig
 from commgym.offer.generator import (
     build_instance,
@@ -36,23 +29,17 @@ def main() -> None:
     args = _parse_args()
     setup_logging()
     cfg = load_config(TaskConfig, args.task_config)
-    root = args.data_dir if args.data_dir is not None else default_data_dir()
-    products = load_products(root)
-    tx = load_transactions(root)
-    txc, _ = prepare_transactions(tx, products, load_config(CleaningConfig, args.cleaning_config))
-    demographics = {row.household_key for row in load_demographics(root)}
-    coverage = (
-        txc.groupby(['commodity', 'WEEK_NO']).agg(n_skus=('PRODUCT_ID', 'nunique')).reset_index()
-    )
-    splits = build_splits(
-        txc, demographics, coverage, load_config(SplitsConfig, args.splits_config)
+    products, txc, splits = load_context(
+        args.data_dir,
+        load_config(CleaningConfig, args.cleaning_config),
+        load_config(SplitsConfig, args.splits_config),
     )
     ctx = build_offer_context(
         txc,
         products,
-        load_campaigns(root),
-        load_campaign_targeting(root),
-        load_coupon_eligibility(root),
+        load_campaigns(args.data_dir),
+        load_campaign_targeting(args.data_dir),
+        load_coupon_eligibility(args.data_dir),
         cfg,
     )
     seed = zlib.crc32(f'{args.seed}-{args.split}'.encode())

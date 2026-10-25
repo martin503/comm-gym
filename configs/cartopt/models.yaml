@@ -1,0 +1,9 @@
+models:
+  openai/gpt-6-luna:
+    temperature: 1.0
+    max_tokens: 8192
+    reasoning_effort: low
+  qwen/qwen3.8-27b:
+    temperature: 1.0
+    max_tokens: 8192
+    reasoning_effort: low

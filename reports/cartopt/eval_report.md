@@ -1,8 +1,8 @@
 # Eval report — eval_unseen
 
-Sampling params: `{'temperature': 1.0, 'max_tokens': 8192, 'reasoning_effort': 'low'}`
-
 ## openai/gpt-6-luna
+
+Sampling params: `{'temperature': 1.0, 'max_tokens': 8192, 'reasoning_effort': 'low'}`
 
 | level | stratum | inst | mean reward [95% CI] | pass@1 | pass@4 | pass@8 | feasible | price ok | zero-var | within sd |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -44,3 +44,29 @@ Sampling params: `{'temperature': 1.0, 'max_tokens': 8192, 'reasoning_effort': '
 - arithmetic: instance `eval_unseen-L4-0` rollout 3 (reward 0.844, gap 158c, violations [])
 - near-miss: instance `eval_unseen-L4-0` rollout 3 (reward 0.844, gap 158c, violations [])
 - success: instance `eval_unseen-L4-3` rollout 2 (reward 1.000, gap 0c, violations [])
+## qwen/qwen3.8-27b
+
+Sampling params: `{'temperature': 1.0, 'max_tokens': 8192, 'reasoning_effort': 'low'}`
+
+| level | stratum | inst | mean reward [95% CI] | pass@1 | pass@4 | pass@8 | feasible | price ok | zero-var | within sd |
+|---|---|---|---|---|---|---|---|---|---|---|
+| L1 | all | 10 | 1.000 [1.000, 1.000] | 100% | 100% | 100% | 100% | 100% | 100% | 0.000 |
+| L1 | trap | 9 | 1.000 [1.000, 1.000] | 100% | 100% | 100% | 100% | 100% | 100% | 0.000 |
+| L1 | no_trap | 1 | 1.000 [1.000, 1.000] | 100% | 100% | 100% | 100% | 100% | 100% | 0.000 |
+| L2 | all | 10 | 0.852 [0.718, 0.959] | 71% | 88% | 90% | 88% | 82% | 50% | 0.144 |
+| L2 | trap | 7 | 0.937 [0.847, 1.000] | 84% | 86% | 86% | 96% | 93% | 71% | 0.079 |
+| L2 | no_trap | 3 | 0.653 [0.366, 0.836] | 42% | 92% | 100% | 67% | 58% | 0% | 0.294 |
+
+## Failure taxonomy
+
+- **L1**: {'optimal': 80}
+- **L2**: {'optimal': 56, 'arithmetic': 4, 'suboptimal_feasible': 10, 'infeasible:missing:CHRISTMAS  SEASONAL': 6, 'parse:no_answer_block': 1, 'infeasible:quota:National': 3}
+
+## Examples
+
+**L1**
+- success: instance `eval_unseen-L1-28` rollout 1 (reward 1.000, gap 0c, violations [])
+**L2**
+- arithmetic: instance `eval_unseen-L2-70` rollout 1 (reward 0.740, gap 82c, violations [])
+- near-miss: instance `eval_unseen-L2-43` rollout 3 (reward 0.803, gap 80c, violations [])
+- success: instance `eval_unseen-L2-83` rollout 0 (reward 1.000, gap 0c, violations [])

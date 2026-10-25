@@ -1,23 +1,23 @@
 import argparse
-import json
-import os
 from pathlib import Path
 
 import anyio
-from loguru import logger
 
-from commgym.core.config import load_config
+from commgym.core.cli import comma_list
+from commgym.core.config import load_config, load_models
+from commgym.core.eval import LevelSpec, SweepPlan, run_sweep, select_models
 from commgym.core.logging import setup_logging
-from commgym.core.openrouter import OpenRouterClient, fetch_model_prices, load_api_key
-from commgym.core.runner import EvalItem, GradeFn, GradeOutcome, RunState, run_level
+from commgym.core.openrouter import OpenRouterClient
+from commgym.core.rollouts import read_jsonl
+from commgym.core.runner import EvalItem, GradeFn, GradeOutcome
 from commgym.offer.config import GateConfig, RewardConfig
 from commgym.offer.generator import InstanceRecord, record_to_instance
 from commgym.offer.instance import OfferInstance
 from commgym.offer.lexicon import Lexicon, build_lexicon, load_commodity_names
 from commgym.offer.prompts import system_prompt, user_prompt
-from commgym.offer.reward import grade, parse_completion
+from commgym.offer.reward import components_of, grade, parse_completion
 
-FULL_N, FULL_K = 50, 8
+SWEEP_PLAN = SweepPlan(full_n=50, full_k=8)
 
 
 def main() -> None:
@@ -31,37 +31,36 @@ async def amain(args: argparse.Namespace, client: OpenRouterClient | None = None
     reward_cfg = load_config(RewardConfig, args.reward_config)
     lexicon = build_lexicon(load_commodity_names(args.commodities))
     instances = _load_instances(args.instances_dir / f'{args.split}.jsonl')
-    prices = fetch_model_prices()
-    missing = [m for m in args.models if m not in prices]
-    assert not missing, f'no pricing for {missing}; cost logging needs the models endpoint'
-    if client is None:
-        client = OpenRouterClient(load_api_key(os.environ, args.env_file))
-    state = RunState()
-    for model in args.models:
-        for level in args.levels:
-            await _run_level(
-                args, model, level, instances, lexicon, gate_cfg, reward_cfg, client, prices, state
-            )
-    logger.info(
-        'run complete: {} rollouts scored, {} api failures, total spend ${:.4f}',
-        len(state.rewards),
-        state.failures,
-        state.spent_usd,
+    models = select_models(load_models(args.config), args.models)
+    specs = {
+        level: _level_spec(args, level, instances, lexicon, gate_cfg, reward_cfg)
+        for level in args.levels
+    }
+    await run_sweep(
+        models,
+        args.levels,
+        specs,
+        env_file=args.env_file,
+        plan=SWEEP_PLAN,
+        split=args.split,
+        rollouts_dir=args.rollouts_dir,
+        k=args.k,
+        concurrency=args.concurrency,
+        seed=args.seed,
+        success_label='gate_pass',
+        client=client,
+        dry_run=args.dry_run,
     )
 
 
-async def _run_level(
+def _level_spec(
     args: argparse.Namespace,
-    model: str,
     level: str,
     instances: list[OfferInstance],
     lexicon: Lexicon,
     gate_cfg: GateConfig,
     reward_cfg: RewardConfig,
-    client: OpenRouterClient,
-    prices: dict[str, dict[str, str]],
-    state: RunState,
-) -> None:
+) -> LevelSpec:
     subset = instances[: args.n]
     items = [
         EvalItem(
@@ -71,45 +70,12 @@ async def _run_level(
         )
         for instance in subset
     ]
-    out_path = args.rollouts_dir / model.replace('/', '__') / f'{args.split}_{level}.jsonl'
-    summary = await run_level(
-        items,
-        _make_grader(subset, level, lexicon, gate_cfg, reward_cfg),
-        client,
-        model,
-        level,
-        out_path,
-        prices,
-        system_prompt(gate_cfg.max_words),
-        'gate_pass',
-        state,
-        k=args.k,
-        temperature=args.temperature,
-        max_tokens=args.max_tokens,
-        reasoning_effort=args.reasoning_effort,
-        concurrency=args.concurrency,
-        seed=args.seed,
+    return LevelSpec(
+        items=items,
+        grade_fn=_make_grader(subset, level, lexicon, gate_cfg, reward_cfg),
+        system_message=system_prompt(gate_cfg.max_words),
+        success_key='gate_pass',
     )
-    if summary.rewards:
-        n = len(summary.rewards)
-        logger.info(
-            '{} {}: n={} judge-free mean={:.3f} gate_pass={:.0%} run_spend=${:.4f}',
-            model,
-            level,
-            n,
-            sum(summary.rewards) / n,
-            sum(summary.successes) / n,
-            state.spent_usd,
-        )
-    if args.dry_run and state.rewards:
-        per_rollout = state.spent_usd / len(state.rewards)
-        logger.info(
-            'dry run: full sweep {} levels x {}x{} ~${:.2f} per model',
-            len(args.levels),
-            FULL_N,
-            FULL_K,
-            len(args.levels) * FULL_N * FULL_K * per_rollout,
-        )
 
 
 def _make_grader(
@@ -126,26 +92,11 @@ def _make_grader(
         graded = grade(completion, instance, level, lexicon, gate_cfg, reward_cfg)
         parsed = parse_completion(completion)
         parsed_selection = parsed.selected if parsed.parse_ok else None
-        shown = {coupon.code: coupon for coupon in instance.slice_for(level)}
         return GradeOutcome(
             reward=graded.reward,
             parsed=None if parsed_selection is None else list(parsed_selection),
             parse_reason=parsed.reason,
-            components={
-                'gate_pass': graded.gate_passed,
-                'parse_ok': graded.parse_ok,
-                'gate_failures': list(graded.failures),
-                'affinity': graded.affinity,
-                'word_count': graded.word_count,
-                'n_selected': len(graded.selected),
-                'selected': list(graded.selected),
-                'message': graded.message,
-                'coupon_keys': {
-                    code: [coupon.campaign, coupon.coupon_upc]
-                    for code, coupon in shown.items()
-                    if code in graded.selected
-                },
-            },
+            components=components_of(graded, instance, level),
         )
 
     return grade_fn
@@ -153,9 +104,7 @@ def _make_grader(
 
 def _load_instances(path: Path) -> list[OfferInstance]:
     instances = [
-        record_to_instance(InstanceRecord.model_validate(json.loads(line)))
-        for line in path.read_text().splitlines()
-        if line.strip()
+        record_to_instance(InstanceRecord.model_validate(record)) for record in read_jsonl(path)
     ]
     assert instances, f'{path} has no instances; run scripts/offer/generate.py first'
     return instances
@@ -165,18 +114,18 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description='Zero-shot eval of models on offer-message instances (gate-only reward)'
     )
-    parser.add_argument('--models', required=True, help='comma-separated OpenRouter model ids')
+    parser.add_argument(
+        '--config', type=Path, default=Path('configs/offer/models.yaml'), help='models config'
+    )
+    parser.add_argument(
+        '--models', type=comma_list, default=[], help='subset of configured models (default: all)'
+    )
     parser.add_argument(
         '--split', default='eval_unseen', choices=['dev', 'eval_unseen', 'eval_known']
     )
-    parser.add_argument('--levels', default='L1,L2,L3')
+    parser.add_argument('--levels', type=comma_list, default=['L1', 'L2', 'L3'])
     parser.add_argument('--n', type=int, default=50, help='instances per level (max pool size)')
     parser.add_argument('--k', type=int, default=8, help='rollouts per instance')
-    parser.add_argument('--temperature', type=float, default=1.0)
-    parser.add_argument('--max-tokens', type=int, default=4096)
-    parser.add_argument(
-        '--reasoning-effort', choices=['minimal', 'low', 'medium', 'high'], default=None
-    )
     parser.add_argument('--concurrency', type=int, default=4)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--dry-run', action='store_true', help='cap n<=10, k<=2, extrapolate cost')
@@ -187,8 +136,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument('--instances-dir', type=Path, default=Path('instances/offer'))
     parser.add_argument('--rollouts-dir', type=Path, default=Path('rollouts/offer'))
     args = parser.parse_args()
-    args.models = [m.strip() for m in args.models.split(',')]
-    args.levels = [level.strip() for level in args.levels.split(',')]
     if args.dry_run:
         args.n, args.k = min(args.n, 10), min(args.k, 2)
     return args

@@ -12,7 +12,13 @@ from tqdm import tqdm
 
 from commgym.core.config import load_config
 from commgym.core.logging import setup_logging
-from commgym.core.openrouter import OpenRouterClient, fetch_model_prices, load_api_key
+from commgym.core.openrouter import (
+    OpenRouterClient,
+    estimate_cost_usd,
+    fetch_model_prices,
+    load_api_key,
+)
+from commgym.core.rollouts import read_jsonl
 from commgym.offer.config import JudgeConfig
 from commgym.offer.judge import JUDGE_PROMPT_VERSION, judge_pair
 
@@ -63,7 +69,7 @@ async def _judge_file(
     sidecar = path.with_name(f'{path.stem}.{JUDGE_TAG}.jsonl')
     done = _resume_keys(sidecar)
     pending: list[Pending] = []
-    for record in _read_jsonl(path):
+    for record in read_jsonl(path):
         components = record['components']
         assert isinstance(components, dict), 'components must be a dict'
         if not components.get('gate_pass'):
@@ -133,7 +139,7 @@ async def _judge_file(
                         'judge_model': cfg.model,
                         'judge_prompt_version': JUDGE_PROMPT_VERSION,
                         'tokens': [outcome.prompt_tokens, outcome.completion_tokens],
-                        'cost_usd': _cost(
+                        'cost_usd': estimate_cost_usd(
                             prices, cfg.model, outcome.prompt_tokens, outcome.completion_tokens
                         ),
                         'error': outcome.error,
@@ -155,7 +161,7 @@ def _resume_keys(sidecar: Path) -> set[tuple[str, int, str, str]]:
     if not sidecar.is_file():
         return set()
     keys = set()
-    for row in _read_jsonl(sidecar):
+    for row in read_jsonl(sidecar):
         keys.add(
             (
                 str(row['instance_id']),
@@ -179,34 +185,15 @@ def _params(record: dict[str, object]) -> dict[str, object]:
     return dict(value)
 
 
-def _read_jsonl(path: Path) -> list[dict[str, object]]:
-    rows = []
-    for line in path.read_text().splitlines():
-        if line.strip():
-            record = json.loads(line)
-            assert isinstance(record, dict), f'{path}: rows must be JSON objects'
-            rows.append(record)
-    return rows
-
-
 def _load_refs(path: Path) -> dict[tuple[str, str], tuple[tuple[str, ...], str]]:
-    refs = {}
-    for row in _read_jsonl(path):
+    refs: dict[tuple[str, str], tuple[tuple[str, ...], str]] = {}
+    for row in read_jsonl(path):
         key = (str(row['instance_id']), str(row['level']))
         selection = row['selection']
         assert isinstance(selection, list), 'reference selection must be a list'
         refs[key] = (tuple(str(code) for code in selection), str(row['message']))
     assert refs, f'{path} has no references; run scripts/offer/generate_references.py first'
     return refs
-
-
-def _cost(
-    prices: dict[str, dict[str, str]], model: str, prompt_tokens: int, completion_tokens: int
-) -> float:
-    entry = prices.get(model, {})
-    prompt_price = float(entry.get('prompt', '0') or '0')
-    completion_price = float(entry.get('completion', '0') or '0')
-    return prompt_tokens * prompt_price + completion_tokens * completion_price
 
 
 def _parse_args() -> argparse.Namespace:

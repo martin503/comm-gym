@@ -1,21 +1,16 @@
 import argparse
-import json
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 from loguru import logger
 
+from commgym.core.cli import comma_list, write_report
+from commgym.core.config import load_models
+from commgym.core.eval import select_models
 from commgym.core.logging import setup_logging
-from commgym.core.stats import (
-    bootstrap_mean_ci,
-    pass_at_k,
-    within_instance_sd,
-    zero_variance_fraction,
-)
-
-PASS_KS = (1, 4, 8)
+from commgym.core.rollouts import read_jsonl, rollouts_path
+from commgym.core.stats import instance_stats
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,18 +34,12 @@ class Rollout:
 def main() -> None:
     args = _parse_args()
     setup_logging()
-    params: dict[str, object] = {
-        'temperature': args.temperature,
-        'max_tokens': args.max_tokens,
-        'reasoning_effort': args.reasoning_effort,
-    }
-    sections = [f'# Eval report — {args.split}', '', f'Sampling params: `{params}`', '']
-    for model in args.models:
-        sections += [f'## {model}', '']
-        sections += _model_sections(args, model, params)
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text('\n'.join(sections) + '\n')
-    logger.info('report written to {}', args.report)
+    models = select_models(load_models(args.config), args.models)
+    sections = [f'# Eval report — {args.split}', '']
+    for model, params in models.items():
+        sections += [f'## {model}', '', f'Sampling params: `{params.sampling_params()}`', '']
+        sections += _model_sections(args, model, params.sampling_params())
+    write_report(args.report, sections)
 
 
 def _model_sections(args: argparse.Namespace, model: str, params: dict[str, object]) -> list[str]:
@@ -61,9 +50,9 @@ def _model_sections(args: argparse.Namespace, model: str, params: dict[str, obje
     lines = [header, '|---|---|---|---|---|---|---|---|---|---|---|']
     taxonomy_rows: list[str] = []
     examples: list[str] = []
-    model_dir = args.rollouts_dir / model.replace('/', '__')
     for level in args.levels:
-        records = _load_records(model_dir / f'{args.split}_{level}.jsonl', params)
+        path = rollouts_path(args.rollouts_dir, model, args.split, level)
+        records = _load_records(path, params)
         if not records:
             logger.warning('{} {}: no rollouts for {}', model, level, params)
             continue
@@ -71,13 +60,15 @@ def _model_sections(args: argparse.Namespace, model: str, params: dict[str, obje
             subset = records if stratum == 'all' else [r for r in records if r.stratum == stratum]
             if not subset:
                 continue
-            stats = _instance_stats(subset)
+            stats = instance_stats(*_groups(subset))
+            feasible = sum(1 for r in subset if r.feasible) / len(subset)
+            price_ok = sum(1 for r in subset if r.price_ok) / len(subset)
             lines.append(
                 f'| {level} | {stratum} | {stats.n_instances} '
                 f'| {stats.reward_mean:.3f} [{stats.reward_lo:.3f}, {stats.reward_hi:.3f}] '
                 f'| {_pct(stats.pass_at[1])} | {_pct(stats.pass_at[4])} '
                 f'| {_pct(stats.pass_at[8])} '
-                f'| {stats.feasible:.0%} | {stats.price_ok:.0%} '
+                f'| {feasible:.0%} | {price_ok:.0%} '
                 f'| {stats.zero_var:.0%} | {stats.within_sd:.3f} |'
             )
         taxonomy_rows.append(f'- **{level}**: {dict(_taxonomy(records))}')
@@ -95,20 +86,23 @@ def _load_records(path: Path, params: dict[str, object]) -> list[Rollout]:
     if not path.is_file():
         return []
     rollouts: list[Rollout] = []
-    for line in path.read_text().splitlines():
-        record = json.loads(line)
+    for record in read_jsonl(path):
         if record.get('sampling_params') != params:
             continue
         components = record['components']
         assert isinstance(components, dict), 'record components must be a mapping'
+        rollout_idx = record['rollout_idx']
+        reward = record['reward']
+        assert isinstance(rollout_idx, int), 'rollout_idx must be an int'
+        assert isinstance(reward, int | float), 'reward must be numeric'
         violations = tuple(str(v) for v in components['violations'])
         gap = components['cost_gap_cents']
         rollouts.append(
             Rollout(
                 instance_id=str(record['instance_id']),
-                rollout_idx=int(record['rollout_idx']),
+                rollout_idx=rollout_idx,
                 stratum=str(record['stratum']),
-                reward=float(record['reward']),
+                reward=float(reward),
                 parse_ok=bool(components['parse_ok']),
                 feasible=bool(components['feasible']),
                 exact_opt=bool(components['exact_opt']),
@@ -124,37 +118,14 @@ def _load_records(path: Path, params: dict[str, object]) -> list[Rollout]:
     return rollouts
 
 
-@dataclass(frozen=True, slots=True)
-class Stats:
-    n_instances: int
-    reward_mean: float
-    reward_lo: float
-    reward_hi: float
-    pass_at: dict[int, float | None]
-    feasible: float
-    price_ok: float
-    zero_var: float
-    within_sd: float
-
-
-def _instance_stats(records: list[Rollout]) -> Stats:
+def _groups(records: list[Rollout]) -> tuple[list[list[float]], list[list[bool]]]:
     by_instance: dict[str, list[Rollout]] = defaultdict(list)
     for record in records:
         by_instance[record.instance_id].append(record)
     groups = list(by_instance.values())
-    reward_groups = [[r.reward for r in group] for group in groups]
-    success_groups = [[r.exact_opt for r in group] for group in groups]
-    mean, lo, hi = bootstrap_mean_ci([float(np.mean(group)) for group in reward_groups])
-    return Stats(
-        n_instances=len(groups),
-        reward_mean=mean,
-        reward_lo=lo,
-        reward_hi=hi,
-        pass_at={k: pass_at_k(success_groups, k) for k in PASS_KS},
-        feasible=sum(1 for r in records if r.feasible) / len(records),
-        price_ok=sum(1 for r in records if r.price_ok) / len(records),
-        zero_var=zero_variance_fraction(reward_groups),
-        within_sd=within_instance_sd(reward_groups),
+    return (
+        [[r.reward for r in group] for group in groups],
+        [[r.exact_opt for r in group] for group in groups],
     )
 
 
@@ -210,18 +181,17 @@ def _examples(level: str, records: list[Rollout]) -> list[str]:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Analyze saved rollouts of one split')
-    parser.add_argument('--models', required=True, help='comma-separated OpenRouter model ids')
+    parser.add_argument(
+        '--config', type=Path, default=Path('configs/cartopt/models.yaml'), help='models config'
+    )
+    parser.add_argument(
+        '--models', type=comma_list, default=[], help='subset of configured models (default: all)'
+    )
     parser.add_argument('--split', default='eval_unseen')
-    parser.add_argument('--levels', default='L1,L2,L3,L4')
-    parser.add_argument('--temperature', type=float, default=1.0)
-    parser.add_argument('--max-tokens', type=int, default=8192)
-    parser.add_argument('--reasoning-effort', default='low')
+    parser.add_argument('--levels', type=comma_list, default=['L1', 'L2', 'L3', 'L4'])
     parser.add_argument('--rollouts-dir', type=Path, default=Path('rollouts/cartopt'))
     parser.add_argument('--report', type=Path, default=Path('reports/cartopt/eval_report.md'))
-    args = parser.parse_args()
-    args.models = [m.strip() for m in args.models.split(',')]
-    args.levels = [level.strip() for level in args.levels.split(',')]
-    return args
+    return parser.parse_args()
 
 
 if __name__ == '__main__':

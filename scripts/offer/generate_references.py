@@ -8,9 +8,11 @@ import numpy as np
 from loguru import logger
 from tqdm import tqdm
 
+from commgym.core.cli import comma_list
 from commgym.core.config import load_config
 from commgym.core.logging import setup_logging
 from commgym.core.openrouter import OpenRouterClient, fetch_model_prices, load_api_key
+from commgym.core.rollouts import read_jsonl
 from commgym.offer.baselines import baseline_completions
 from commgym.offer.config import GateConfig, RewardConfig
 from commgym.offer.generator import InstanceRecord, record_to_instance
@@ -147,18 +149,14 @@ def _done_keys(path: Path) -> set[tuple[str, str]]:
     if not path.is_file():
         return set()
     keys = set()
-    for line in path.read_text().splitlines():
-        if line.strip():
-            row = json.loads(line)
-            keys.add((str(row['instance_id']), str(row['level'])))
+    for row in read_jsonl(path):
+        keys.add((str(row['instance_id']), str(row['level'])))
     return keys
 
 
 def _load_instances(path: Path) -> list[OfferInstance]:
     instances = [
-        record_to_instance(InstanceRecord.model_validate(json.loads(line)))
-        for line in path.read_text().splitlines()
-        if line.strip()
+        record_to_instance(InstanceRecord.model_validate(record)) for record in read_jsonl(path)
     ]
     assert instances, f'{path} has no instances; run scripts/offer/generate.py first'
     return instances
@@ -170,7 +168,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument('--split', default='eval_unseen')
     parser.add_argument('--model', default='anthropic/claude-haiku-5.5')
-    parser.add_argument('--levels', default='L1,L2,L3')
+    parser.add_argument('--levels', type=comma_list, default=['L1', 'L2', 'L3'])
     parser.add_argument('--temperature', type=float, default=0.7)
     parser.add_argument('--max-attempts', type=int, default=3)
     parser.add_argument('--seed', type=int, default=42)
@@ -183,7 +181,6 @@ def _parse_args() -> argparse.Namespace:
         '--out', type=Path, default=None, help='defaults to instances/offer/<split>.refs.jsonl'
     )
     args = parser.parse_args()
-    args.levels = [level.strip() for level in args.levels.split(',')]
     if args.out is None:
         args.out = Path('instances/offer') / f'{args.split}.refs.jsonl'
     return args

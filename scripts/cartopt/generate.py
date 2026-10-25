@@ -12,29 +12,29 @@ from commgym.cartopt.generator import (
     instance_to_record,
     render_preview,
 )
+from commgym.core.cli import comma_list
 from commgym.core.config import load_config
 from commgym.core.logging import setup_logging
-from commgym.dunnhumby.clean import prepare_transactions
 from commgym.dunnhumby.config import CleaningConfig, PricingConfig, SplitsConfig
+from commgym.dunnhumby.context import load_context
 from commgym.dunnhumby.load import (
     load_campaign_targeting,
     load_campaigns,
     load_coupon_eligibility,
-    load_demographics,
-    load_products,
-    load_transactions,
 )
 from commgym.dunnhumby.prices import build_price_table
-from commgym.dunnhumby.splits import CampaignCalendar, build_splits
+from commgym.dunnhumby.splits import CampaignCalendar
 
 
 def main() -> None:
     args = _parse_args()
     setup_logging()
     levels_cfg = load_config(LevelsConfig, args.levels_config)
-    products = load_products(args.data_dir)
-    tx = load_transactions(args.data_dir)
-    txc, _ = prepare_transactions(tx, products, load_config(CleaningConfig, args.cleaning_config))
+    products, txc, splits = load_context(
+        args.data_dir,
+        load_config(CleaningConfig, args.cleaning_config),
+        load_config(SplitsConfig, args.splits_config),
+    )
     prices = build_price_table(txc, load_config(PricingConfig, args.pricing_config))
     logger.info('price table: {} (product, week) points', len(prices))
     calendar = CampaignCalendar(tuple(load_campaigns(args.data_dir)))
@@ -46,13 +46,6 @@ def main() -> None:
         targeting.setdefault(row.household_key, set()).add(row.campaign)
     amounts = (txc.loc[txc['COUPON_DISC'] < 0, 'COUPON_DISC'].abs() * 100).round().astype('int64')
     logger.info('coupon amount pool: {} lines', len(amounts))
-    demographics = {d.household_key for d in load_demographics(args.data_dir)}
-    coverage = (
-        txc.groupby(['commodity', 'WEEK_NO']).agg(n_skus=('PRODUCT_ID', 'nunique')).reset_index()
-    )
-    splits = build_splits(
-        txc, demographics, coverage, load_config(SplitsConfig, args.splits_config)
-    )
     ctx = build_generator_context(
         txc,
         products,
@@ -89,7 +82,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--split', default='dev', choices=['train', 'dev', 'eval_unseen', 'eval_known']
     )
-    parser.add_argument('--levels', default='L1,L2', help='comma-separated level names')
+    parser.add_argument('--levels', type=comma_list, default=['L1', 'L2'])
     parser.add_argument('--n', type=int, default=10, help='instances per level')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--data-dir', type=Path, default=None)
@@ -102,9 +95,7 @@ def _parse_args() -> argparse.Namespace:
         '--preview', type=Path, default=Path('reports/cartopt/instances_preview.md')
     )
     parser.add_argument('--preview-n', type=int, default=20)
-    args = parser.parse_args()
-    args.levels = [level.strip() for level in args.levels.split(',')]
-    return args
+    return parser.parse_args()
 
 
 if __name__ == '__main__':

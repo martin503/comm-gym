@@ -16,16 +16,13 @@ authors = [
 ]
 dependencies = [
     "anyio>=4.15.1",
-    "datasets>=5.1.0",
     "loguru>=0.7.3",
     "numpy>=2.5.4",
     "openai>=3.36.1",
     "pandas>=3.1.0",
     "pydantic>=2.14.1",
     "pyyaml>=6.0.3",
-    "tiktoken>=0.14.0",
     "tqdm>=4.70.1",
-    "verifiers==0.3.1",
 ]
 
 [dependency-groups]

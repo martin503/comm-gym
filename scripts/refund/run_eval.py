@@ -1,32 +1,24 @@
 import argparse
-import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
 import anyio
 import numpy as np
-from loguru import logger
 
-from commgym.core.config import load_config
+from commgym.core.cli import comma_list
+from commgym.core.config import load_config, load_models
+from commgym.core.eval import LevelSpec, SweepPlan, run_sweep, select_models
 from commgym.core.logging import setup_logging
-from commgym.core.openrouter import OpenRouterClient, fetch_model_prices, load_api_key
-from commgym.core.runner import (
-    EvalItem,
-    GradeFn,
-    GradeOutcome,
-    LevelSummary,
-    RunState,
-    run_level,
-)
+from commgym.core.openrouter import OpenRouterClient
+from commgym.core.rollouts import read_jsonl
+from commgym.core.runner import EvalItem, GradeFn, GradeOutcome
 from commgym.refund.config import RewardConfig
 from commgym.refund.instance import RefundInstance, record_to_instance
 from commgym.refund.prompts import system_prompt, user_prompt
 from commgym.refund.reward import grade, parse_completion
 
-# full-sweep target the dry run extrapolates towards: 100 anchors x k rollouts x 3 levels
-FULL_N, FULL_K = 100, 8
-BUDGET_USD = 5.0
+# full-sweep target the dry run extrapolates towards, and the pre-agreed budget gate
+SWEEP_PLAN = SweepPlan(full_n=100, full_k=8, budget_usd=5.0)
 
 
 def main() -> None:
@@ -37,59 +29,27 @@ def main() -> None:
 
 async def amain(args: argparse.Namespace, client: OpenRouterClient | None = None) -> None:
     cfg = load_config(RewardConfig, args.reward_config)
-    prices = fetch_model_prices()
-    missing = [m for m in args.models if m not in prices]
-    assert not missing, f'no pricing for {missing}; cost logging needs the models endpoint'
-    if client is None:
-        client = OpenRouterClient(load_api_key(os.environ, args.env_file))
-    state = RunState()
-    for model in args.models:
-        for level in args.levels:
-            await _run_level(args, model, level, client, prices, cfg, state)
-    logger.info(
-        'run complete: {} rollouts scored, {} api failures, total spend ${:.4f}',
-        len(state.rewards),
-        state.failures,
-        state.spent_usd,
+    models = select_models(load_models(args.config), args.models)
+    specs = {level: _level_spec(args, cfg, level) for level in args.levels}
+    await run_sweep(
+        models,
+        args.levels,
+        specs,
+        env_file=args.env_file,
+        plan=SWEEP_PLAN,
+        split=args.split,
+        rollouts_dir=args.rollouts_dir,
+        k=args.k,
+        concurrency=args.concurrency,
+        seed=args.seed,
+        success_label='parse_ok',
+        client=client,
+        dry_run=args.dry_run,
     )
-    if args.dry_run and state.rewards:
-        per_rollout = state.spent_usd / len(state.rewards)
-        projected = per_rollout * FULL_N * FULL_K * len(args.levels)
-        if projected <= BUDGET_USD:
-            logger.success(
-                'dry run: full sweep {}x{}x{} projects to ${:.2f}, within the ${:.2f} budget'
-                ' ({} per rollout)',
-                FULL_N,
-                FULL_K,
-                len(args.levels),
-                projected,
-                BUDGET_USD,
-                f'${per_rollout:.5f}',
-            )
-        else:
-            logger.error(
-                'dry run: full sweep {}x{}x{} projects to ${:.2f}, over the ${:.2f} budget;'
-                ' pre-agreed fallback: live sweep with --k 4 projects ${:.2f}',
-                FULL_N,
-                FULL_K,
-                len(args.levels),
-                projected,
-                BUDGET_USD,
-                projected / 2,
-            )
 
 
-async def _run_level(
-    args: argparse.Namespace,
-    model: str,
-    level: str,
-    client: OpenRouterClient,
-    prices: dict[str, dict[str, str]],
-    cfg: RewardConfig,
-    state: RunState,
-) -> None:
+def _level_spec(args: argparse.Namespace, cfg: RewardConfig, level: str) -> LevelSpec:
     rows = _load_rows(args.instances_dir, args.split, level, args.n, args.seed)
-    system = system_prompt()
     items = [
         EvalItem(
             row.instance_id,
@@ -99,26 +59,12 @@ async def _run_level(
         for row in rows
     ]
     instances = {row.instance_id: row.instance for row in rows}
-    out_path = args.rollouts_dir / model.replace('/', '__') / f'{args.split}_{level}.jsonl'
-    summary = await run_level(
-        items,
-        _make_grader(instances, cfg),
-        client,
-        model,
-        level,
-        out_path,
-        prices,
-        system,
-        'parse_ok',
-        state,
-        k=args.k,
-        temperature=args.temperature,
-        max_tokens=args.max_tokens,
-        reasoning_effort=args.reasoning_effort,
-        concurrency=args.concurrency,
-        seed=args.seed,
+    return LevelSpec(
+        items=items,
+        grade_fn=_make_grader(instances, cfg),
+        system_message=system_prompt(),
+        success_key='parse_ok',
     )
-    _summarize(model, level, summary, state)
 
 
 def _make_grader(instances: dict[str, RefundInstance], cfg: RewardConfig) -> GradeFn:
@@ -186,22 +132,6 @@ def _make_grader(instances: dict[str, RefundInstance], cfg: RewardConfig) -> Gra
     return grade_fn
 
 
-def _summarize(model: str, level: str, summary: LevelSummary, state: RunState) -> None:
-    if not summary.rewards:
-        logger.warning('{} {}: no rollouts scored', model, level)
-        return
-    n = len(summary.rewards)
-    logger.info(
-        '{} {}: n={} mean_reward={:.3f} parse_ok={:.0%} run_spend=${:.4f}',
-        model,
-        level,
-        n,
-        sum(summary.rewards) / n,
-        sum(summary.successes) / n,
-        state.spent_usd,
-    )
-
-
 @dataclass(frozen=True, slots=True)
 class EvalRow:
     """One eval instance narrowed to what the rollout path needs."""
@@ -213,7 +143,7 @@ class EvalRow:
 
 def _load_rows(instances_dir: Path, split: str, level: str, n: int, seed: int) -> list[EvalRow]:
     path = instances_dir / f'{split}_{level}.jsonl'
-    records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    records = read_jsonl(path)
     assert records, f'no instances in {path}'
     rng = np.random.default_rng(seed)
     chosen = rng.permutation(len(records))[:n] if n < len(records) else range(len(records))
@@ -222,45 +152,39 @@ def _load_rows(instances_dir: Path, split: str, level: str, n: int, seed: int) -
         record = records[int(i)]
         info = record['info']
         assert isinstance(info, dict), f'{path}: record info must be a mapping'
+        payload = record['instance']
+        assert isinstance(payload, dict), 'record must carry an instance mapping'
         rows.append(
             EvalRow(
                 instance_id=str(info['instance_id']),
-                instance=record_to_instance(_instance_payload(record)),
+                instance=record_to_instance(payload),
                 is_out_of_window=bool(info['is_out_of_window']),
             )
         )
     return rows
 
 
-def _instance_payload(record: dict[str, object]) -> dict[str, object]:
-    payload = record['instance']
-    assert isinstance(payload, dict), 'record must carry an instance mapping'
-    return payload
-
-
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description='Zero-shot eval of models on refund-claim instances'
     )
-    parser.add_argument('--models', required=True, help='comma-separated OpenRouter model ids')
+    parser.add_argument(
+        '--config', type=Path, default=Path('configs/refund/models.yaml'), help='models config'
+    )
+    parser.add_argument(
+        '--models', type=comma_list, default=[], help='subset of configured models (default: all)'
+    )
     parser.add_argument(
         '--split', default='eval_unseen', choices=['dev', 'eval_unseen', 'eval_known']
     )
     parser.add_argument(
         '--levels',
-        default='L2',
-        help='comma-separated level names (L2 only: the level lever never materialized)',
+        type=comma_list,
+        default=['L2'],
+        help='level names (L2 only: the level lever never materialized)',
     )
     parser.add_argument('--n', type=int, default=100, help='instances per level')
     parser.add_argument('--k', type=int, default=8, help='rollouts per instance')
-    parser.add_argument('--temperature', type=float, default=1.0)
-    parser.add_argument('--max-tokens', type=int, default=4096)
-    parser.add_argument(
-        '--reasoning-effort',
-        choices=['minimal', 'low', 'medium', 'high'],
-        default='low',
-        help='fixed reasoning effort for reasoning models',
-    )
     parser.add_argument('--concurrency', type=int, default=4, help='max simultaneous API requests')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument(
@@ -273,8 +197,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument('--instances-dir', type=Path, default=Path('instances/refund_v4'))
     parser.add_argument('--rollouts-dir', type=Path, default=Path('rollouts/refund_v4'))
     args = parser.parse_args()
-    args.models = [m.strip() for m in args.models.split(',')]
-    args.levels = [level.strip() for level in args.levels.split(',')]
     if args.dry_run:
         args.n, args.k = min(args.n, 10), min(args.k, 2)
     return args

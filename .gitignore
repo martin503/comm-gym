@@ -2,6 +2,7 @@
 .claude
 /data/
 /instances/
+/experiments/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

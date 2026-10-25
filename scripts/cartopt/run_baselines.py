@@ -1,5 +1,4 @@
 import argparse
-import json
 from pathlib import Path
 
 import numpy as np
@@ -12,8 +11,10 @@ from commgym.cartopt.generator import record_to_instance
 from commgym.cartopt.pricing import cost
 from commgym.cartopt.reward import grade_cart
 from commgym.cartopt.solver import solve
+from commgym.core.cli import comma_list, write_report
 from commgym.core.config import load_config
 from commgym.core.logging import setup_logging
+from commgym.core.rollouts import read_jsonl
 
 SUMMARY_FIELDS = ('reward', 'reward_trap', 'n_trap', 'feasible', 'exact', 'overpay', 'n')
 
@@ -26,7 +27,7 @@ def main() -> None:
     gates: list[tuple[str, str, bool]] = []
     for level in args.levels:
         path = args.instances_dir / f'{args.split}_{level}.jsonl'
-        records = [json.loads(line) for line in path.read_text().splitlines()]
+        records = read_jsonl(path)
         logger.info('{}: {} instances from {}', level, len(records), path)
         rng = np.random.default_rng(args.seed)
         for record in tqdm(records, desc=level, unit='inst'):
@@ -89,9 +90,7 @@ def _write_report(
         )
     lines += ['', '## Shortcut gate (each must sit below constraint-aware greedy)', '']
     lines += [f'- {level} / {name}: {"PASS" if ok else "FAIL"}' for level, name, ok in gates]
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text('\n'.join(lines) + '\n')
-    logger.info('baseline report written to {}', args.report)
+    write_report(args.report, lines)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -99,14 +98,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--split', default='dev', choices=['train', 'dev', 'eval_unseen', 'eval_known']
     )
-    parser.add_argument('--levels', default='L1,L2', help='comma-separated level names')
+    parser.add_argument('--levels', type=comma_list, default=['L1', 'L2'])
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--reward-config', type=Path, default=Path('configs/cartopt/reward.yaml'))
     parser.add_argument('--instances-dir', type=Path, default=Path('instances/cartopt'))
     parser.add_argument('--report', type=Path, default=Path('reports/cartopt/baselines.md'))
-    args = parser.parse_args()
-    args.levels = [level.strip() for level in args.levels.split(',')]
-    return args
+    return parser.parse_args()
 
 
 if __name__ == '__main__':

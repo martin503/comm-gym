@@ -1,12 +1,11 @@
 import argparse
-import json
 from collections import Counter
 from pathlib import Path
 
-from loguru import logger
-
+from commgym.core.cli import comma_list, write_report
 from commgym.core.config import load_config
 from commgym.core.logging import setup_logging
+from commgym.core.rollouts import read_jsonl
 from commgym.core.stats import bootstrap_mean_ci
 from commgym.offer.config import RewardConfig
 from commgym.offer.reward import final_reward
@@ -20,10 +19,6 @@ def main() -> None:
     args = _parse_args()
     setup_logging()
     reward_cfg = load_config(RewardConfig, args.reward_config)
-    models = args.models or sorted(
-        {path.parent.name for path in args.rollouts_dir.glob(f'*/{args.split}_*.jsonl')}
-    )
-    assert models, f'no rollout files under {args.rollouts_dir} for split {args.split}'
     lines = [
         '# Offer Eval Report',
         '',
@@ -36,9 +31,9 @@ def main() -> None:
     failures: dict[tuple[str, str], Counter[str]] = {}
     examples: list[str] = []
     judged_errors = 0
-    for model in models:
+    for model in args.models:
         for level in args.levels:
-            rollouts = _read_jsonl(args.rollouts_dir / model / f'{args.split}_{level}.jsonl')
+            rollouts = read_jsonl(args.rollouts_dir / model / f'{args.split}_{level}.jsonl')
             sidecar = args.rollouts_dir / model / f'{args.split}_{level}.{JUDGE_TAG}.jsonl'
             judged = _judged_by_key(sidecar) if sidecar.is_file() else {}
             judged_errors = sum(1 for row in judged.values() if row.get('error'))
@@ -83,9 +78,7 @@ def main() -> None:
     if judged_errors:
         lines += ['', f'- judge errors excluded (not zeroed): {judged_errors}']
     lines += ['', '## Examples', ''] + examples
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text('\n'.join(lines) + '\n')
-    logger.info('eval report written to {}', args.report)
+    write_report(args.report, lines)
 
 
 def _examples(
@@ -132,7 +125,7 @@ def _failure_taxonomy(rollouts: list[dict[str, object]]) -> Counter[str]:
 
 def _judged_by_key(path: Path) -> dict[Key, dict[str, object]]:
     judged: dict[Key, dict[str, object]] = {}
-    for row in _read_jsonl(path):
+    for row in read_jsonl(path):
         judged[_key(row)] = row
     return judged
 
@@ -175,29 +168,22 @@ def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
-def _read_jsonl(path: Path) -> list[dict[str, object]]:
-    rows = []
-    for line in path.read_text().splitlines():
-        if line.strip():
-            row = json.loads(line)
-            assert isinstance(row, dict), f'{path}: rows must be JSON objects'
-            rows.append(row)
-    return rows
-
-
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Aggregate offer rollouts with judge sidecars')
     parser.add_argument('--split', default='eval_unseen')
-    parser.add_argument('--levels', default='L1,L2,L3')
+    parser.add_argument('--levels', type=comma_list, default=['L1', 'L2', 'L3'])
     parser.add_argument(
-        '--models', default='', help='comma-separated rollout dir names; default all'
+        '--models', type=comma_list, default=[], help='rollout dir names; default all'
     )
     parser.add_argument('--reward-config', type=Path, default=Path('configs/offer/reward.yaml'))
     parser.add_argument('--rollouts-dir', type=Path, default=Path('rollouts/offer'))
     parser.add_argument('--report', type=Path, default=Path('reports/offer/offer_eval_report.md'))
     args = parser.parse_args()
-    args.levels = [level.strip() for level in args.levels.split(',')]
-    args.models = [m.strip() for m in args.models.split(',') if m.strip()]
+    if not args.models:
+        args.models = sorted(
+            {path.parent.name for path in args.rollouts_dir.glob(f'*/{args.split}_*.jsonl')}
+        )
+    assert args.models, f'no rollout files under {args.rollouts_dir} for split {args.split}'
     return args
 
 

@@ -1,12 +1,13 @@
 import argparse
-import json
 from pathlib import Path
 
 from loguru import logger
 from tqdm import tqdm
 
+from commgym.core.cli import comma_list, write_report
 from commgym.core.config import load_config
 from commgym.core.logging import setup_logging
+from commgym.core.rollouts import read_jsonl
 from commgym.refund.baselines import (
     ConstantFits,
     always_approve_answers,
@@ -84,7 +85,7 @@ def main() -> None:
 
 def _load(instances_dir: Path, split: str, level: str) -> list[dict[str, object]]:
     path = instances_dir / f'{split}_{level}.jsonl'
-    records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    records = read_jsonl(path)
     logger.info('{}: {} instances', path, len(records))
     return records
 
@@ -128,9 +129,7 @@ def _write_report(
     lines += ['', '| pooled (all levels) |', '', '| baseline | mean reward |', '|---|---|']
     lines += [f'| {name} | {reward:.3f} |' for name, reward in pooled.items()]
     lines += ['', '## Gates', ''] + [f'- {name}: {"PASS" if ok else "FAIL"}' for name, ok in gates]
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text('\n'.join(lines) + '\n')
-    logger.info('baseline report written to {}', args.report)
+    write_report(args.report, lines)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -138,7 +137,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--split', default='dev', choices=['train', 'dev', 'eval_unseen', 'eval_known']
     )
-    parser.add_argument('--levels', default='L1,L2,L3', help='comma-separated level names')
+    parser.add_argument('--levels', type=comma_list, default=['L1', 'L2', 'L3'])
     parser.add_argument('--train-split', default='train')
     parser.add_argument('--train-level', default='L3')
     parser.add_argument('--reward-config', type=Path, default=Path('configs/refund/reward.yaml'))
@@ -147,7 +146,6 @@ def _parse_args() -> argparse.Namespace:
         '--report', type=Path, default=Path('reports/refund/refund_baselines_v4.md')
     )
     args = parser.parse_args()
-    args.levels = [level.strip() for level in args.levels.split(',')]
     return args
 
 

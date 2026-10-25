@@ -12,6 +12,9 @@ from openai import AsyncOpenAI
 BASE_URL = 'https://openrouter.ai/api/v1'
 PRICES_URL = 'https://openrouter.ai/api/v1/models'
 
+# per-token USD prices keyed by model id, as returned by the models endpoint
+type Prices = dict[str, dict[str, str]]
+
 # the OpenAI client's overloaded create() defies a structural Protocol, so the injectable
 # boundary stays permissive; the test double in tests/_mocks mirrors the keyword contract
 type ChatCreate = Callable[..., Awaitable[object]]
@@ -89,7 +92,7 @@ class OpenRouterClient:
         return _normalize(response, model, latency)
 
 
-def fetch_model_prices(timeout: float = 30.0, retries: int = 3) -> dict[str, dict[str, str]]:
+def fetch_model_prices(timeout: float = 30.0, retries: int = 3) -> Prices:
     """Per-token USD prices keyed by model id, from OpenRouter's public models endpoint.
 
     Uses urllib (system CA bundle) rather than httpx: the project sandbox blocks reading
@@ -130,7 +133,7 @@ def fetch_model_prices(timeout: float = 30.0, retries: int = 3) -> dict[str, dic
 
 
 def estimate_cost_usd(
-    prices: dict[str, dict[str, str]], model: str, prompt_tokens: int, completion_tokens: int
+    prices: Prices, model: str, prompt_tokens: int, completion_tokens: int
 ) -> float:
     """Estimated spend for one call from OpenRouter's per-token USD prices.
 

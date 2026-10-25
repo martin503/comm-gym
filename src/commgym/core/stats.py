@@ -1,9 +1,40 @@
 import math
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 
 BOOTSTRAP_RESAMPLES = 10_000
+PASS_KS = (1, 4, 8)
+
+
+@dataclass(frozen=True, slots=True)
+class InstanceStats:
+    """Aggregates over per-instance rollout groups, shared by the eval analyzers."""
+
+    n_instances: int
+    reward_mean: float
+    reward_lo: float
+    reward_hi: float
+    pass_at: dict[int, float | None]
+    zero_var: float
+    within_sd: float
+
+
+def instance_stats(
+    rewards: Sequence[Sequence[float]], successes: Sequence[Sequence[bool]]
+) -> InstanceStats:
+    """Bootstrap CI, pass@k ladder, and variance summaries over instance groups."""
+    mean, lo, hi = bootstrap_mean_ci([float(np.mean(group)) for group in rewards])
+    return InstanceStats(
+        n_instances=len(rewards),
+        reward_mean=mean,
+        reward_lo=lo,
+        reward_hi=hi,
+        pass_at={k: pass_at_k(successes, k) for k in PASS_KS},
+        zero_var=zero_variance_fraction(rewards),
+        within_sd=within_instance_sd(rewards),
+    )
 
 
 def pass_at_k(successes: Sequence[Sequence[bool]], k: int) -> float | None:
