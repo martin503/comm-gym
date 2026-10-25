@@ -60,7 +60,7 @@ otherwise               →  clamp(0.2 + 0.2·affinity + 0.6·judge_win, 0, 1)
 | `ungrounded_category:<keyword>` | a category word whose commodities are not covered by the selected coupons (lexicon of commodity names, tokens, singulars, synonyms like soda/pop → soft drinks, chips/crisps → bag snacks) |
 | `not_specific` | no category mention intersects the selection at all |
 | `urgency:<phrase>` | deadline language ("ends soon", "last chance", "hurry") with no ends-soon coupon selected |
-| `brand_tier:<claim>` | "store/national brand" claim not matched by a selected coupon's tier |
+| `brand_tier:<claim>` | "store/national brand" claim not matched by a selected coupon of that tier that also covers a mentioned category |
 | `judge_addressing:<phrase>` | meta-talk aimed at the grader ("evaluator", "high score", "ignore previous") |
 
 ## Why it won't be reward hacked
@@ -108,11 +108,14 @@ example 1.
 20% of eligible commodities are held out (seeded) and never sampled — an unseen-category
 generalization axis.
 
-## Examples (eval_unseen, temperature 1.0, 8 attempts per instance)
+## Examples
+
+Each example gives the verbatim prompt the model saw, its answer, and the reward arithmetic.
+All from eval_unseen, temperature 1.0, 8 attempts per instance.
 
 ### Success 1 — grounded urgency at L1, `openai/gpt-6-luna`
 
-Instance `offer-eval_unseen-1186-548`, rollout 0/8. Prompt verbatim:
+Instance `offer-eval_unseen-1186-548`, rollout 0/8.
 
 ```text
 ## Household profile
@@ -137,89 +140,253 @@ Select 1 to 3 coupons and write the message.
 <answer>{"selected":["k02","k03","k01"],"message":"Enjoy offers on oral hygiene, cheese, and fruit and vegetables—these deals end soon!"}</answer>
 ```
 
-**Grade: final reward 1.0** — gate clean, affinity 1.0 (the three highest-mass coupons in a
-5-coupon pool), judge win 1.0 in both orders. Note the grounding: "these deals end soon" is
-legal because *every* selected coupon is flagged ends-soon; each mentioned category is
-covered by a selected coupon.
+**Why final reward 1.0 = 0.2 + 0.2·affinity + 0.6·judge_win with affinity = 1.0 and
+judge_win = 1.0:**
+
+- **Affinity 1.0**: the pool's purchase mass for this household sits in Oral Hygiene (5
+  purchases, via k02), Cheese (5, via k03) and Organics Fruit & Vegetables (via k01). The
+  two unselected coupons — k04 (pharmacy/vitamins) and k05 (refrigerated dough) — cover
+  categories this household never buys, i.e. zero mass, so the selection captures 100% of
+  it. Prefix = 0.2 + 0.2 = 0.4.
+- **Grounding, phrase by phrase**: "oral hygiene" → k02; "cheese" → k03; "fruit and
+  vegetables" → k01's Organics Fruit Vegetables. "these deals end soon" is legal urgency:
+  every selected coupon carries the ends-soon flag. 13 words, no digits.
+- **Judge_win 1.0**: beat the stored reference in both presentation orders.
+- Final = 0.2 + 0.2·1.0 + 0.6·1.0 = **1.0**.
 
 ### Success 2 — 20-coupon pool at L3, `openai/gpt-6-luna`
 
-Instance `offer-eval_unseen-1526-615`, rollout 5/8. Same task with 20 coupons shown (19
-distractors: laundry, air care, vitamins, frozen bread dough…); the household's top
-purchases are soft drinks (29), cat food, baked sweet goods, beef, lunchmeat. The model
-selected k01 (Beef, Lunchmeat, Pork — National), k02 (Soft Drinks, New Age — National),
-k03 (Soft Drinks — National):
+Instance `offer-eval_unseen-1526-615`, rollout 5/8.
+
+```text
+## Household profile
+- top purchases: Soft Drinks (29 purchases, 21% store brand), Cat Food (13 purchases, 100% store brand), BAKED SWEET GOODS (11 purchases, 100% store brand), Beef (7 purchases, 0% store brand), Cheese (5 purchases, 80% store brand), Lunchmeat (5 purchases, 40% store brand), NEWSPAPER (5 purchases, 0% store brand), Frozen Pizza (4 purchases, 0% store brand), Milk By (4 purchases, 100% store brand), Soup (4 purchases, 50% store brand)
+- store-brand share overall: 52%
+- grocery trips per week: 2.214
+
+## Coupons live for this household
+
+| code | covers | brand tier | ends soon |
+|---|---|---|---|
+| k06 | Water Carbonated Flvrd Drink | National |  |
+| k16 | Laundry Detergents | National |  |
+| k12 | Antacids | National |  |
+| k04 | Dry Sauces Gravy | Private |  |
+| k08 | Brooms And Mops | National |  |
+| k19 | Processed | National |  |
+| k17 | Oral Hygiene | National |  |
+| k20 | Frozen Bread Dough | National |  |
+| k11 | Laundry Additives, Laundry Detergents | National |  |
+| k18 | Air Care | National |  |
+| k14 | Salad Mix | National |  |
+| k13 | Vitamins, Dietary Aid | National |  |
+| k15 | Laundry Additives | Private |  |
+| k07 | Paper Housewares | Private |  |
+| k01 | Beef, Lunchmeat, Pork | National |  |
+| k10 | Flour Meals | Private |  |
+| k05 | Pnt Btr Jelly Jams | Private |  |
+| k03 | Soft Drinks | National |  |
+| k02 | Soft Drinks, New Age | National |  |
+| k09 | Canned Juices | National |  |
+
+Select 1 to 3 coupons and write the message.
+```
 
 ```json
 <answer>{"selected":["k03","k02","k01"],"message":"Save on national-brand soft drinks, beef, and lunchmeat with your coupons this week!"}</answer>
 ```
 
-**Grade: final reward 1.0** — gate clean, affinity 1.0, judge win 1.0 both orders. The
-"national-brand" claim is grounded: all three selected coupons are National tier.
+**Why final reward 1.0:**
+
+- **Affinity 1.0 despite 19 distractors**: this household's purchase mass is concentrated
+  in Soft Drinks (29 purchases — its dominant category, covered by k03 and k02), Beef (7)
+  and Lunchmeat (5), both via k01. None of the 17 unselected coupons (laundry, air care,
+  vitamins, brooms, flour…) covers anything this household buys — each has zero mass, so
+  the three relevant coupons capture 100% of the pool mass. This is the level design:
+  distractors grow with level, the relevant prefix stays constant.
+- **The brand-tier claim is grounded**: "national-brand … soft drinks, beef, and
+  lunchmeat" — all three mentioned categories are covered by selected coupons, and all
+  three of those coupons are National tier (a Mixed-tier coupon would also have been
+  legal).
+- 13 words, no digits, no urgency. Judge_win 1.0 in both orders.
+- Final = 0.2 + 0.2·1.0 + 0.6·1.0 = **1.0**.
 
 ### Success 3 — L2, `qwen/qwen3.8-27b`
 
-Instance `offer-eval_unseen-1508-504`, rollout 4/8. Household buys frozen meat dinners,
-fluid milk (100% store brand), deli meats; selected k01 (Frzn Meat Meat Dinners, Frozen
-Pizza, Ice Cream Milk Sherbts — Mixed), k02 (Cheese, Yogurt, Fluid Milk — Mixed),
-k03 (Organics Fruit Vegetables — National):
+Instance `offer-eval_unseen-1508-504`, rollout 4/8.
+
+```text
+## Household profile
+- top purchases: Frzn Meat Meat Dinners (7 purchases, 0% store brand), Fluid Milk (6 purchases, 100% store brand), Refrgratd Juices Drnks (6 purchases, 100% store brand), Deli Meats (4 purchases, 0% store brand), Salad Mix (4 purchases, 0% store brand), Dinner Sausage (3 purchases, 0% store brand), Eggs (3 purchases, 100% store brand), Salads Dips (3 purchases, 100% store brand), Seafood Frozen (3 purchases, 0% store brand), Tomatoes (3 purchases, 0% store brand)
+- store-brand share overall: 32%
+- grocery trips per week: 0.714
+
+## Coupons live for this household
+
+| code | covers | brand tier | ends soon |
+|---|---|---|---|
+| k03 | Processed, Floral Fresh Cut, Organics Fruit Vegetables | National |  |
+| k04 | Cheese, Sald Drsng Sndwch Sprd | National |  |
+| k10 | Hand Body Facial | National |  |
+| k05 | Dog Foods | National |  |
+| k09 | Paper Housewares | Private |  |
+| k08 | Convenient Brkfst Whlsm Snacks | Private |  |
+| k07 | Pnt Btr Jelly Jams | National |  |
+| k01 | Frzn Meat Meat Dinners, Frozen Pizza, Ice Cream Milk Sherbts | Mixed |  |
+| k02 | Cheese, Yogurt, Fluid Milk | Mixed |  |
+| k06 | Prepared Food | Private |  |
+
+Select 1 to 3 coupons and write the message.
+```
 
 ```json
 <answer>{"selected": ["k01", "k02", "k03"], "message": "Deals on frozen meat dinners, milk, and fresh fruit & vegetables just for you. Stock up on your favorites this week!"}</answer>
 ```
 
-**Grade: final reward 1.0** — gate clean, affinity 1.0, judge win 1.0 both orders.
+**Why final reward 1.0:**
+
+- **Affinity 1.0**: the household's mass (frozen meat dinners 7, fluid milk 6, plus its
+  produce purchases) is covered by k01 + k02 + k03; the seven unselected coupons cover
+  categories with zero purchases for this household.
+- **Grounding**: "frozen meat dinners" → k01; "milk" → k02 (Fluid Milk); "fresh fruit &
+  vegetables" → k03 (Organics Fruit Vegetables). 21 words — within the 40-word cap (qwen
+  writes ~20 words on average vs luna's ~12–13), no digits, no urgency.
+- Judge_win 1.0 in both orders. Final = 0.2 + 0.2 + 0.6 = **1.0**.
 
 ### Failure 1 — ungrounded category words, `qwen/qwen3.8-27b`
 
-Instance `offer-eval_unseen-710-615`, rollout 1/8, L2 (10 coupons shown). The household
-buys soft drinks (29), frozen pizza, fluid milk…; the model selected k03 (Soft Drinks,
-Water Carbonated Flvrd Drink), k01 (Frzn Meat Meat Dinners, Frozen Pizza, Ice Cream Milk
-Sherbts) and k10 (Snack Nuts):
+Instance `offer-eval_unseen-710-615`, rollout 1/8, L2.
+
+```text
+## Household profile
+- top purchases: Soft Drinks (28 purchases, 29% store brand), Dinner Mxs Dry (10 purchases, 40% store brand), Frozen Pizza (10 purchases, 0% store brand), Fluid Milk (8 purchases, 100% store brand), Candy Packaged (6 purchases, 0% store brand), Fd Wraps Bags Trsh Bg (6 purchases, 17% store brand), Bag Snacks (5 purchases, 0% store brand), Baked Bread Buns Rolls (4 purchases, 25% store brand), BAKED SWEET GOODS (4 purchases, 0% store brand), Beef (4 purchases, 0% store brand)
+- store-brand share overall: 22%
+- grocery trips per week: 2.786
+
+## Coupons live for this household
+
+| code | covers | brand tier | ends soon |
+|---|---|---|---|
+| k08 | Teas | National |  |
+| k01 | Frzn Meat Meat Dinners, Frozen Pizza, Ice Cream Milk Sherbts | Mixed |  |
+| k06 | Eye And Ear Care | National |  |
+| k02 | Makeup And Treatment, Hair Care, Oral Hygiene | National |  |
+| k07 | Frozen Pie Desserts | National |  |
+| k05 | Shortening Oil | Private |  |
+| k09 | Frozen Pie Desserts | National |  |
+| k03 | Soft Drinks, Water Carbonated Flvrd Drink | National |  |
+| k10 | Snack Nuts | Private |  |
+| k04 | Sugars Sweetners | Private |  |
+
+Select 1 to 3 coupons and write the message.
+```
 
 ```json
 <answer>{"selected": ["k03","k01","k10"], "message": "Your go-to soft drinks, frozen pizzas, and snacks have new deals waiting. Stock up before your next trip!"}</answer>
 ```
 
-**Grade: reward 0.0** — `ungrounded_category:snacks`, `ungrounded_category:new`. Two
-subtleties, both by design: "snacks" lexically denotes commodities like BAG SNACKS — it
-does **not** cover SNACK NUTS, the k10 coupon the model selected (writing "snack nuts"
-would have passed); and "new" is a token of the commodity "New Age" beverages, so "new
-deals" reads as a category mention nothing selected covers. This is the single dominant
-failure mode for qwen (it accounts for nearly all of its gate losses) — one learnable rule.
+**Why reward 0.0** — the gate zeroes everything; a would-be prefix of
+0.2 + 0.2·0.648 = 0.33 (the affinity was decent) is never awarded, and the rollout is never
+sent to the judge. Two words caused it:
+
+- "snacks" **fails**: it lexically denotes BAG SNACKS-type commodities — and the selected
+  k10 covers **SNACK NUTS**, a *different* commodity in this taxonomy. The selection was
+  fine; the wording wasn't: "snack nuts" would have passed.
+- "new deals" **fails**: "new" is a token of the commodity "New Age" (beverages), so it
+  counts as a category mention — and nothing selected covers New Age.
+- What passed: "soft drinks" → k03, "frozen pizzas" → k01, 18 words, no digits.
+
+This is qwen's single dominant failure mode (nearly all of its gate losses look like this) —
+one learnable rule: mention exactly what the coupons cover.
 
 ### Failure 2 — ungrounded brand claim, `qwen/qwen3.8-27b`
 
-Instance `offer-eval_unseen-996-543`, rollout 0/8, L3; selected k03 and k13:
+Instance `offer-eval_unseen-996-543`, rollout 0/8, L3.
+
+```text
+## Household profile
+- top purchases: Deli Meats (10 purchases, 0% store brand), Fluid Milk (7 purchases, 100% store brand), Baked Bread Buns Rolls (6 purchases, 67% store brand), Vegetables Shelf Stable (6 purchases, 67% store brand), BAKED SWEET GOODS (4 purchases, 0% store brand), Beef (4 purchases, 25% store brand), Heat Serve (4 purchases, 100% store brand), Magazine (4 purchases, 0% store brand), Soup (4 purchases, 50% store brand), Water Carbonated Flvrd Drink (4 purchases, 0% store brand)
+- store-brand share overall: 38%
+- grocery trips per week: 1.429
+
+## Coupons live for this household
+
+| code | covers | brand tier | ends soon |
+|---|---|---|---|
+| k04 | Cheese | National |  |
+| k06 | Hand Body Facial, Soap Liquid Bar | National |  |
+| k11 | Candy Packaged | National |  |
+| k19 | Sinus And Allergy, Cold And Flu | National |  |
+| k10 | Shortening Oil | National |  |
+| k17 | Laundry Detergents | National |  |
+| k16 | Teas | National |  |
+| k14 | Laundry Detergents | National |  |
+| k07 | Hardware Supplies | National |  |
+| k08 | Eye And Ear Care | National |  |
+| k13 | Dairy | Private |  |
+| k12 | Adult Incontinence | National |  |
+| k09 | Vitamins | National |  |
+| k18 | Vitamins | National |  |
+| k02 | Frzn Meat Meat Dinners, Frozen Pizza, Ice Cream Milk Sherbts | Mixed |  |
+| k15 | Antacids | National |  |
+| k20 | Pickle Relish Pkld Veg | National |  |
+| k03 | Beef, Lunchmeat, Pork | National |  |
+| k01 | Processed, Floral Fresh Cut, Organics Fruit Vegetables | National |  |
+| k05 | Frozen Pizza | National |  |
+
+Select 1 to 3 coupons and write the message.
+```
 
 ```json
 <answer>{"selected": ["k03","k13"], "message": "Treat yourself to your favorite deli meats and pick up your store brand milk — great deals waiting inside."}</answer>
 ```
 
-**Grade: reward 0.0** — `ungrounded_category:deli meats`, `ungrounded_category:milk`,
-`not_specific`, `brand_tier:store brand`. Nothing selected covers deli meats or milk, no
-mention intersects the selection at all, and neither selected coupon is Private/Mixed tier,
-so the "store brand" claim is unbacked. Four independent gate rules catch one sloppy
-message.
+**Why reward 0.0** — four independent gate failures, all visible against the prompt above
+(selection: k03 = Beef/Lunchmeat/Pork, National; k13 = Dairy, Private):
+
+- `ungrounded_category:deli meats` — "deli meats" is this household's #1 category (10
+  purchases), but nothing selected covers DELI MEATS. The near-miss is instructive: k03
+  covers *Lunchmeat*, and in this taxonomy DELI MEATS and LUNCHMEAT are distinct
+  commodities (they appear as separate categories in the cartopt menus).
+- `ungrounded_category:milk` — "milk" maps to FLUID MILK-type commodities (the household's
+  #2), not k13's DAIRY, which is yet another distinct commodity. Selecting k13 did not make
+  "milk" grounded.
+- `brand_tier:store brand` — the tier claim must be backed by a selected Private/Mixed
+  coupon **that also covers a category the message actually mentions**. k13 is Private, but
+  it covers only DAIRY, which the message never grounds — so the "store brand" claim rides
+  on nothing.
+- `not_specific` — with both mentions ungrounded, no category word in the message
+  intersects the selection at all.
+
+The message talked entirely past its own selection — reward 0 despite a reasonable-sounding
+sentence.
 
 ### Failure 3 — gate-clean but judged worse than the reference, `openai/gpt-6-luna`
 
 Same household as failure 1 (`offer-eval_unseen-710-615`), rollout 1/8, L2 — showing the
-layer above the gate. Selected k03 + k01 (soft drinks, frozen pizza), affinity 0.65:
+layer above the gate. Prompt: see failure 1. Selected k03 + k01 (soft drinks, frozen
+pizza):
 
 ```json
 <answer>{"selected":["k03","k01"],"message":"Find offers on soft drinks and frozen pizza in your coupons."}</answer>
 ```
 
-**Grade: final reward 0.33** — gate clean, prefix 0.33, but judge win 0.0 in both orders
-against the stored reference:
+**Why final reward 0.33 = 0.2 + 0.2·0.648 + 0.6·0.0:**
+
+- **Gate clean**: "soft drinks" → k03, "frozen pizza" → k01; 11 words, no digits, no
+  urgency. The base 0.2 is banked.
+- **Affinity 0.648**: the two selected coupons capture 65% of the shown pool's purchase
+  mass → prefix = 0.2 + 0.1296 = 0.33.
+- **Judge_win 0.0**: lost the pairwise comparison in *both* orders against the stored
+  reference:
 
 > Stocking up on soft drinks or frozen pizza this week? Fresh savings are waiting for your
 > favorite sodas and frozen pizzas. Check your app and grab them on your next trip.
 
-Perfectly grounded, but terse and list-like; the judge (both orders) preferred the more
-conversational reference. This is what the 0.6-weighted judge term is for — the gate can
-only certify truthfulness, not quality.
+- The reference opens with a question hook, speaks to "your favorite sodas", and ends with
+  an action ("check your app"); the model's line is a flat, inert listing. Both orders
+  agreed. This is exactly what the 0.6-weighted judge term exists for: the gate certifies
+  truthfulness, the judge scores quality — and quality is where this rollout paid.
 
 ## Results and per-instance variance
 

@@ -105,12 +105,15 @@ asserts:
 20% of eligible commodities are held out (seeded) and never sampled into any split — an
 unseen-commodity generalization axis.
 
-## Examples (eval_unseen, temperature 1.0, 8 attempts per instance)
+## Examples
+
+Each example gives the verbatim prompt the model saw, its answer, and the reward arithmetic.
+All from eval_unseen, temperature 1.0, 8 attempts per instance.
 
 ### Success 1 — coupon chain at L2 (trap), `openai/gpt-6-luna`
 
 Instance `eval_unseen-L2-0`, rollout 1/8, stratum trap. C* = $6.33, median feasible cart
-$9.04. Prompt verbatim:
+$9.04.
 
 ```text
 Shopping list (pick exactly one item per category):
@@ -165,27 +168,163 @@ Model output:
 <answer>{"cart":{"CANDY - CHECKLANE":"C7","FROZEN PIZZA":"S1","CANDY - PACKAGED":"L7","FRZN NOVELTIES/WTR ICE":"G3","FRZN JCE CONC/DRNKS":"H8"},"total":6.33}</answer>
 ```
 
-**Grade: reward 1.0** — exact optimum (gap 0c), feasible, claimed total exact. The cart is a
-coupon chain: H8 ($1.99) + L7 ($0.99) cross the $2.76 bundle threshold for $1.00 off, H8
-takes another $0.50, S1 $0.40 — $8.23 of net shelf cost minus $1.90 of stacked coupons,
-with exactly four National items.
+**Why reward 1.0** — feasible, so `0.5 + 0.4·opt + 0.1·price_ok`:
 
-### Success 2 — L4 (390k-cart space), `openai/gpt-6-luna`
+- Cart net cost: C7 $0.25 + S1 $2.50 + L7 $0.99 + G3 $2.50 + H8 $1.99 = **$8.23**.
+- Coupons: K2 $0.40 (S1) + K1 $0.50 (H8) + K3 $1.00 bundle — H8 $1.99 + L7 $0.99 = $2.98
+  clears the $2.76 threshold — total **$1.90 off** → $6.33 = C* exactly, so `opt` = 1.0
+  (gap 0c).
+- Claimed total $6.33 matches the grader's recomputation → `price_ok` = 1.
+- Reward = 0.5 + 0.4·1.0 + 0.1·1 = **1.0**. Quota met: C7, S1, L7, H8 are the four
+  National items.
 
-Instance `eval_unseen-L4-3`, rollout 2/8, stratum trap. C* = $12.25, median feasible cart
-$20.56. Eight categories, five coupons (three of them threshold bundles), quota of six
-National items. The model answered with no visible reasoning:
+The trap: the cheapest juice is C3 at $1.00 net, but switching to H8 ($1.99) costs +$0.99
+and unlocks K1 + K3 ($1.50) — a net −$0.51 move that per-category price-sorting never
+finds. The greedy cart (with C3) pays $6.84.
+
+### Success 2 — L4, 390k-cart space, `openai/gpt-6-luna`
+
+Instance `eval_unseen-L4-3`, rollout 2/8, stratum trap. C* = $12.25, median feasible
+$20.56.
+
+```text
+Shopping list (pick exactly one item per category):
+- LUNCHMEAT
+- CANNED JUICES
+- DRIED FRUIT
+- PASTA SAUCE
+- BATH TISSUES
+- CHEESES
+- CONDIMENTS/SAUCES
+- APPLES
+
+Menu:
+| code | category | brand | manufacturer | size | shelf price | loyalty disc |
+|---|---|---|---|---|---|---|
+| F1 | LUNCHMEAT | Private | 69 | 8 OZ | $2.99 | $0.00 |
+| L1 | LUNCHMEAT | National | 1089 | 6 OZ | $2.19 | $0.00 |
+| C1 | LUNCHMEAT | National | 1094 | 12 OZ | $1.99 | $0.00 |
+| P5 | LUNCHMEAT | Private | 69 | 16 OZ | $1.29 | $0.00 |
+| H9 | LUNCHMEAT | National | 1425 | 6 OZ | $0.99 | $0.00 |
+| L3 | CANNED JUICES | National | 1046 | 67.5 OZ | $1.85 | $0.00 |
+| G7 | CANNED JUICES | National | 2557 | 67.5 OZ | $1.85 | $0.00 |
+| R4 | CANNED JUICES | National | 2557 | 10/6.75 OZ | $1.85 | $0.00 |
+| T7 | CANNED JUICES | Private | 69 | 67.5 OZ | $1.75 | $0.08 |
+| B0 | CANNED JUICES | National | 1046 | 10/6.75 OZ | $1.85 | $0.00 |
+| L7 | DRIED FRUIT | National | 876 | 8 OZ | $2.99 | $0.00 |
+| R8 | DRIED FRUIT | National | 612 | 12 OZ | $4.69 | $0.00 |
+| D6 | DRIED FRUIT | National | 876 | 6 OZ | $3.49 | $0.49 |
+| X1 | DRIED FRUIT | National | 876 | 6/1.5 OZ | $2.19 | $0.00 |
+| J4 | DRIED FRUIT | Private | 69 | 12 OZ | $2.29 | $0.12 |
+| D0 | PASTA SAUCE | National | 754 | 26 OZ | $1.67 | $0.00 |
+| X3 | PASTA SAUCE | National | 754 | 26.3 OZ | $1.67 | $0.00 |
+| P7 | PASTA SAUCE | National | 754 | 26 OZ | $1.67 | $0.00 |
+| T1 | PASTA SAUCE | National | 754 | 16 OZ | $1.67 | $0.00 |
+| P3 | PASTA SAUCE | Private | 69 | 26 OZ | $1.15 | $0.06 |
+| A2 | BATH TISSUES | National | 595 | 250.5 SQFT | $4.69 | $1.19 |
+| V4 | BATH TISSUES | National | 764 | 6 CT | $5.19 | $0.00 |
+| U4 | BATH TISSUES | National | 751 | 300 SQ FT | $9.99 | $1.00 |
+| P2 | BATH TISSUES | Private | 69 |   | $5.49 | $0.00 |
+| T9 | BATH TISSUES | National | 1011 |   | $8.99 | $1.00 |
+| T6 | CHEESES | Private | 69 | 8 OZ | $3.49 | $0.00 |
+| A0 | CHEESES | National | 317 | 8 OZ | $3.59 | $0.00 |
+| D3 | CHEESES | National | 5860 | 8 OZ | $4.99 | $0.00 |
+| D4 | CHEESES | Private | 69 | 8 OZ | $3.49 | $0.00 |
+| E4 | CHEESES | Private | 69 | 6 OZ | $3.99 | $0.00 |
+| K9 | CONDIMENTS/SAUCES | National | 1854 | 15 OZ | $2.19 | $0.00 |
+| U0 | CONDIMENTS/SAUCES | National | 754 | 15 1/2 OZ | $1.09 | $0.09 |
+| C2 | CONDIMENTS/SAUCES | Private | 69 | 14 OZ | $0.99 | $0.00 |
+| X4 | CONDIMENTS/SAUCES | National | 754 | 14 OZ | $1.69 | $0.19 |
+| V6 | CONDIMENTS/SAUCES | National | 407 | 15 OZ | $1.49 | $0.10 |
+| C6 | APPLES | National | 2 |   | $0.40 | $0.00 |
+| H4 | APPLES | National | 2 |   | $0.40 | $0.00 |
+| E9 | APPLES | National | 2 |   | $2.82 | $0.00 |
+| X2 | APPLES | National | 2 |   | $3.70 | $0.00 |
+| Z6 | APPLES | National | 2 |   | $2.96 | $0.00 |
+
+Coupons:
+- K0: $0.50 off item E4
+- K1: $0.50 off item Z6
+- K2: $2.00 off item H4
+- K3: $0.50 off when the combined net spend on APPLES, DRIED FRUIT reaches $5.03
+- K4: $0.75 off when the combined net spend on APPLES, CONDIMENTS/SAUCES reaches $1.76
+- K5: $0.50 off when the combined net spend on DRIED FRUIT, CHEESES reaches $6.75
+
+Constraints:
+- buy at least 7 National-brand items
+
+Choose the cheapest valid cart.
+```
+
+The model (reasoning effort low) answered with no visible reasoning:
 
 ```json
 <answer>{"cart":{"LUNCHMEAT":"H9","CANNED JUICES":"L3","DRIED FRUIT":"X1","PASTA SAUCE":"P3","BATH TISSUES":"A2","CHEESES":"A0","CONDIMENTS/SAUCES":"V6","APPLES":"H4"},"total":12.25}</answer>
 ```
 
-**Grade: reward 1.0** — gap 0c, price_ok true.
+**Why reward 1.0**:
+
+- Cart net cost: H9 $0.99 + L3 $1.85 + X1 $2.19 + P3 $1.09 + A2 $3.50 + A0 $3.59 +
+  V6 $1.39 + H4 $0.40 = **$15.00**.
+- Coupons: K2 $2.00 off H4, plus K4 $0.75 — APPLES $0.40 + CONDIMENTS $1.39 = $1.79
+  clears the $1.76 threshold (by 3c) — **$2.75 off** → $12.25 = C*, `opt` = 1.0.
+- Claimed total $12.25 matches → `price_ok`. Reward = 0.5 + 0.4 + 0.1 = **1.0**.
+- Quota: 7 National picks (H9, L3, X1, A2, A0, V6, H4) with exactly one Private item
+  (P3, the cheapest pasta sauce) — the quota is a floor, so mixing one cheap Private pick
+  is legal and optimal.
+- The two unreachable bundles were correctly left alone: K3 needs APPLES + DRIED FRUIT ≥
+  $5.03 (actual $2.59), K5 needs DRIED FRUIT + CHEESES ≥ $6.75 (actual $5.78).
 
 ### Success 3 — L2 with visible reasoning, `qwen/qwen3.8-27b`
 
 Instance `eval_unseen-L2-83`, rollout 0/8, stratum trap. C* = $9.98, median feasible
-$14.82. Quota: at least 4 National items. The model's reasoning (excerpt):
+$14.82.
+
+```text
+Shopping list (pick exactly one item per category):
+- DELI MEATS
+- LUNCHMEAT
+- MISC. DAIRY
+- CHEESE
+- EGGS
+
+Menu:
+| code | category | brand | manufacturer | size | shelf price | loyalty disc |
+|---|---|---|---|---|---|---|
+| T1 | DELI MEATS | National | 4218 |   | $6.07 | $0.00 |
+| Z5 | DELI MEATS | National | 3886 |   | $3.11 | $0.00 |
+| L1 | DELI MEATS | National | 4084 |   | $4.68 | $0.67 |
+| U4 | DELI MEATS | National | 4540 |   | $6.66 | $0.78 |
+| P9 | LUNCHMEAT | National | 1094 | 15.2 OZ | $2.99 | $0.49 |
+| C7 | LUNCHMEAT | National | 1094 | 10.55OZ | $2.59 | $0.00 |
+| Y8 | LUNCHMEAT | National | 1094 | 11.55OZ | $2.59 | $0.00 |
+| L8 | LUNCHMEAT | National | 1094 | 4.15 OZ | $1.99 | $0.00 |
+| B7 | MISC. DAIRY | Private | 69 | 17.5 OZ | $1.19 | $0.00 |
+| B6 | MISC. DAIRY | National | 908 | 5.6 OZ | $1.89 | $0.00 |
+| U3 | MISC. DAIRY | Private | 69 | 20 OZ | $1.29 | $0.00 |
+| A5 | MISC. DAIRY | National | 5093 | 100 CT | $3.69 | $0.00 |
+| V8 | CHEESE | Private | 69 | 12 OZ | $1.86 | $0.61 |
+| N1 | CHEESE | National | 317 | 16 OZ | $3.89 | $0.10 |
+| A2 | CHEESE | Private | 69 | 12 OZ | $1.74 | $0.49 |
+| T3 | CHEESE | Private | 69 | 16 OZ | $4.99 | $2.49 |
+| H8 | EGGS | National | 5539 | DZ | $2.29 | $0.00 |
+| N9 | EGGS | Private | 69 | 1 DZ | $1.33 | $0.00 |
+| A1 | EGGS | Private | 69 | 1 DZ | $1.34 | $0.00 |
+| X2 | EGGS | National | 5539 | 1 DOZEN | $3.49 | $0.00 |
+
+Coupons:
+- K0: $0.25 off item C7
+- K1: $0.50 off item A1
+- K2: $0.55 off item V8
+- K3: $0.50 off when the combined net spend on EGGS, LUNCHMEAT reaches $6.04
+
+Constraints:
+- buy at least 4 National-brand items
+
+Choose the cheapest valid cart.
+```
+
+The model's reasoning (excerpt):
 
 > Step 2: Check the National constraint — DELI MEATS and LUNCHMEAT are all National, giving
 > 2. I need 2 more from MISC. DAIRY, CHEESE, EGGS. The cheapest way to get 2 more National
@@ -198,56 +337,234 @@ $14.82. Quota: at least 4 National items. The model's reasoning (excerpt):
 <answer>{"cart": {"DELI MEATS": "Z5", "LUNCHMEAT": "L8", "MISC. DAIRY": "B6", "CHEESE": "V8", "EGGS": "H8"}, "total": 9.98}</answer>
 ```
 
-**Grade: reward 1.0** — gap 0c, price_ok true. The cheapest cart (B7/N9 picks) would break
-the National quota; the model priced the quota exactly ($0.70 + $0.96) and took the coupon.
+**Why reward 1.0**:
+
+- Net cost: Z5 $3.11 + L8 $1.99 + B6 $1.89 + V8 $1.25 + H8 $2.29 = **$10.53**; K2 $0.55
+  off V8 → **$9.98** = C*, `opt` = 1.0; claimed total matches → `price_ok`.
+- Reward = 0.5 + 0.4 + 0.1 = **1.0**.
+- The quota is what makes this a trap: the all-cheapest cart (B7 $1.19, A2 $1.25, N9
+  $1.33) holds only 2 National items. Meeting "≥ 4 National" costs exactly $0.70 + $0.96
+  more — the model priced that tradeoff to the cent and also spotted that V8 and A2 tie at
+  $1.25 net, so the K2 coupon on V8 breaks the tie.
 
 ### Failure 1 — cheaper but infeasible (quota), `openai/gpt-6-luna`
 
-Instance `eval_unseen-L2-14`, rollout 0/8, stratum trap. C* = $7.73. Coupons included a
-$1.50 bundle on DRY MIX DESSERTS + CHEESE ≥ $2.25 and a $0.75 item coupon on V4; constraint:
-at least 4 National-brand items.
+Instance `eval_unseen-L2-14`, rollout 0/8, stratum trap. C* = $7.73.
+
+```text
+Shopping list (pick exactly one item per category):
+- CHEESE
+- COLD CEREAL
+- FD WRAPS/BAGS/TRSH BG
+- DRY MIX DESSERTS
+- COOKIES/CONES
+
+Menu:
+| code | category | brand | manufacturer | size | shelf price | loyalty disc |
+|---|---|---|---|---|---|---|
+| X7 | CHEESE | Private | 69 | 8 OZ | $1.69 | $0.19 |
+| R4 | CHEESE | National | 317 | 8 OZ | $2.09 | $0.00 |
+| N3 | CHEESE | Private | 69 | 12 OZ | $2.39 | $0.70 |
+| E6 | CHEESE | Private | 69 | 8 OZ | $1.16 | $0.16 |
+| P1 | COLD CEREAL | National | 1046 | 18 OZ | $3.99 | $0.00 |
+| Q3 | COLD CEREAL | National | 794 | 17 OZ | $4.46 | $0.00 |
+| U9 | COLD CEREAL | National | 1046 | 19 OZ | $3.39 | $0.00 |
+| C3 | COLD CEREAL | Private | 69 | 15.5 OZ | $2.39 | $0.24 |
+| E9 | FD WRAPS/BAGS/TRSH BG | Private | 69 | 20 CT | $1.32 | $0.00 |
+| X4 | FD WRAPS/BAGS/TRSH BG | National | 458 | 20 CT | $2.89 | $0.39 |
+| F7 | FD WRAPS/BAGS/TRSH BG | National | 458 | 15 CT | $2.59 | $0.00 |
+| H0 | FD WRAPS/BAGS/TRSH BG | National | 150 | 22 CT | $2.39 | $0.40 |
+| W3 | DRY MIX DESSERTS | National | 499 | 14.4 OZ | $1.89 | $0.30 |
+| L4 | DRY MIX DESSERTS | Private | 69 | 3.5 OZ | $0.99 | $0.00 |
+| C1 | DRY MIX DESSERTS | National | 499 | 14 OZ | $1.69 | $0.44 |
+| P2 | DRY MIX DESSERTS | Private | 69 | 14.0 OZ | $0.99 | $0.00 |
+| E5 | COOKIES/CONES | Private | 69 | 4 CT | $2.99 | $0.00 |
+| V4 | COOKIES/CONES | National | 1800 | 4 CT | $3.99 | $1.49 |
+| T2 | COOKIES/CONES | Private | 69 | 5 OZ | $1.89 | $0.39 |
+| M0 | COOKIES/CONES | National | 1519 | 4/4 OZ | $4.49 | $0.50 |
+
+Coupons:
+- K0: $0.75 off item V4
+- K1: $0.35 off item N3
+- K2: $0.25 off item Q3
+- K3: $1.50 off when the combined net spend on DRY MIX DESSERTS, CHEESE reaches $2.25
+
+Constraints:
+- buy at least 4 National-brand items
+
+Choose the cheapest valid cart.
+```
 
 ```json
 <answer>{"cart":{"CHEESE":"N3","COLD CEREAL":"C3","FD WRAPS/BAGS/TRSH BG":"H0","DRY MIX DESSERTS":"C1","COOKIES/CONES":"V4"},"total":6.98}</answer>
 ```
 
-**Grade: reward 0.257** — violations `['quota:National']`, 6 of 7 checks passed (0.3 × 6/7).
-The cart costs $6.98, i.e. 75c *below* the optimum — but it holds only three National items.
-A cart cheaper than C* is necessarily invalid, and the 0.3 infeasible cap guarantees it is
-worth less than any feasible cart (floor 0.5).
+**Why reward 0.257**:
+
+- The cart's own arithmetic is right: nets N3 $1.69 + C3 $2.15 + H0 $1.99 + C1 $1.25 +
+  V4 $2.50 = $9.58, minus K1 $0.35 + K0 $0.75 + K3 $1.50 (N3+C1 = $2.94 ≥ $2.25) =
+  **$6.98**, exactly as claimed.
+- But it is **infeasible**: only 3 National items (H0, C1, V4); N3 and C3 are Private, so
+  `quota:National` fires. The other six checks (5 valid category picks, no extra
+  categories) pass → reward = 0.3 × 6/7 = **0.257**.
+- The tell is the price: $6.98 is 75c *below* C* ($7.73). A sub-optimum price is only
+  reachable by breaking the quota — the cheapest *valid* cart must buy a 4th National
+  item. The 0.3 infeasible cap guarantees such carts score below every feasible cart
+  (floor 0.5), so "cheaper but invalid" is never worth it.
 
 ### Failure 2 — right cart, wrong arithmetic, `openai/gpt-6-luna`
 
 Instance `eval_unseen-L4-14`, rollout 2/8, stratum trap. C* = $7.38.
 
+```text
+Shopping list (pick exactly one item per category):
+- ROLLS
+- FROZEN
+- CHEESE
+- DELI MEATS
+- WATER - CARBONATED/FLVRD DRINK
+- CONDIMENTS/SAUCES
+- APPLES
+- LUNCHMEAT
+
+Menu:
+| code | category | brand | manufacturer | size | shelf price | loyalty disc |
+|---|---|---|---|---|---|---|
+| F0 | ROLLS | Private | 69 |   | $1.99 | $0.00 |
+| A8 | ROLLS | National | 5324 | 21 OZ | $2.99 | $0.00 |
+| Z0 | ROLLS | Private | 69 |   | $1.99 | $0.49 |
+| V2 | ROLLS | Private | 69 |   | $1.99 | $0.00 |
+| H4 | ROLLS | Private | 69 |   | $1.99 | $0.49 |
+| K2 | FROZEN | National | 1064 | 5.5 OZ | $2.49 | $0.00 |
+| M8 | FROZEN | National | 5142 | 9 OZ | $3.69 | $0.90 |
+| Y8 | FROZEN | National | 5142 | 10 OZ | $3.29 | $0.50 |
+| C9 | FROZEN | National | 1359 | 9.7 OZ | $2.99 | $0.00 |
+| L1 | FROZEN | National | 1359 | 5.5 OZ | $2.59 | $0.00 |
+| Y7 | CHEESE | Private | 69 | 6 OZ | $1.99 | $0.74 |
+| V5 | CHEESE | National | 1126 | 8 OZ | $3.29 | $0.29 |
+| C6 | CHEESE | Private | 69 | 6 OZ | $2.38 | $0.00 |
+| J6 | CHEESE | National | 5111 | 6 OZ | $1.79 | $0.00 |
+| Y2 | CHEESE | National | 317 | 8 OZ | $2.89 | $0.00 |
+| Y1 | DELI MEATS | National | 4878 |   | $4.11 | $0.00 |
+| G1 | DELI MEATS | National | 4468 |   | $4.23 | $0.00 |
+| C5 | DELI MEATS | National | 4475 |   | $4.23 | $0.00 |
+| B3 | DELI MEATS | National | 4880 |   | $3.05 | $0.00 |
+| D7 | DELI MEATS | National | 4208 |   | $4.61 | $0.00 |
+| A9 | WATER - CARBONATED/FLVRD DRINK | Private | 69 | GAL | $0.89 | $0.00 |
+| M2 | WATER - CARBONATED/FLVRD DRINK | Private | 69 | 1 GAL | $1.09 | $0.10 |
+| B1 | WATER - CARBONATED/FLVRD DRINK | National | 2412 | 12/8OZ | $2.99 | $0.00 |
+| L3 | WATER - CARBONATED/FLVRD DRINK | National | 2412 | 101.4 OZ | $1.29 | $0.00 |
+| R8 | WATER - CARBONATED/FLVRD DRINK | National | 2412 | 1 GALLON | $0.99 | $0.00 |
+| N5 | CONDIMENTS/SAUCES | National | 317 | 18 OZ | $0.96 | $0.00 |
+| L7 | CONDIMENTS/SAUCES | Private | 69 | 18 OZ | $0.79 | $0.00 |
+| R5 | CONDIMENTS/SAUCES | National | 5550 | 18 OZ | $2.19 | $0.00 |
+| L0 | CONDIMENTS/SAUCES | Private | 69 | 18 OZ | $0.79 | $0.00 |
+| W3 | CONDIMENTS/SAUCES | Private | 69 | 18 OZ | $0.87 | $0.00 |
+| U0 | APPLES | National | 2 |   | $3.26 | $1.33 |
+| W0 | APPLES | National | 2 |   | $0.62 | $0.00 |
+| U3 | APPLES | National | 673 | 3 LB | $3.49 | $0.00 |
+| K4 | APPLES | National | 2 |   | $3.63 | $1.48 |
+| X8 | APPLES | National | 673 | 3 LB | $3.49 | $0.00 |
+| N2 | LUNCHMEAT | Private | 69 | 2.5 OZ | $0.69 | $0.19 |
+| S0 | LUNCHMEAT | Private | 69 | 10 OZ | $2.08 | $0.00 |
+| N9 | LUNCHMEAT | National | 1089 | 5 OZ | $1.99 | $0.00 |
+| B2 | LUNCHMEAT | Private | 69 | 6 OZ | $1.79 | $0.12 |
+| A6 | LUNCHMEAT | National | 1094 | 6 OZ | $1.99 | $0.32 |
+
+Coupons:
+- K0: $0.50 off item M8
+- K1: $1.00 off item Y1
+- K2: $1.50 off item G1
+- K3: $3.49 off item V2
+- K4: $1.00 off when the combined net spend on DELI MEATS, APPLES reaches $5.95
+- K5: $0.70 off when the combined net spend on APPLES, CHEESE reaches $4.22
+- K6: $1.00 off when the combined net spend on CHEESE, WATER - CARBONATED/FLVRD DRINK reaches $2.24
+
+Constraints:
+- buy at least 6 National-brand items
+
+Choose the cheapest valid cart.
+```
+
 ```json
 <answer>{"cart":{"ROLLS":"V2","FROZEN":"M8","CHEESE":"J6","DELI MEATS":"G1","WATER - CARBONATED/FLVRD DRINK":"R8","CONDIMENTS/SAUCES":"N5","APPLES":"W0","LUNCHMEAT":"N2"},"total":5.88}</answer>
 ```
 
-**Grade: reward 0.9** — the cart is the exact optimum (gap 0c, feasible), but the claimed
-total $5.88 is $1.50 below the true cost $7.38, so `price_ok` fails. The decomposition
-0.5 + 0.4·1.0 + 0.1·0 shows exactly what was lost: the arithmetic term, nothing else.
+**Why reward 0.9**:
+
+- The cart itself is **the exact optimum**. Grader recomputation: nets V2 $1.99 + M8 $2.79
+  + J6 $1.79 + G1 $4.23 + R8 $0.99 + N5 $0.96 + W0 $0.62 + N2 $0.50 = $13.87, minus K0
+  $0.50 (M8) + K2 $1.50 (G1) + K3 $3.49 (V2 — the $1.99 rolls become effectively free) +
+  K6 $1.00 (J6 $1.79 + R8 $0.99 = $2.78 ≥ $2.24) = **$6.49 off** → **$7.38** = C*,
+  gap 0c → `opt` = 1.0. Quota met (6 National).
+- But the claimed total is $5.88 — exactly $1.50, the size of the K2 item coupon, below
+  the true cost: an arithmetic slip on that one coupon (subtracted twice, or never added
+  back). The grader recomputes cost from the cart, so the understatement buys nothing —
+  only `price_ok` drops: reward = 0.5 + 0.4·1.0 + 0.1·0 = **0.9**.
+- Note the model correctly left K4 and K5 unreachable (DELI+APPLES = $4.85 < $5.95;
+  APPLES+CHEESE = $2.41 < $4.22).
 
 ### Failure 3 — the threshold-bundle trap, `openai/gpt-6-luna`
 
-Instance `eval_unseen-L2-302`, rollout 2/8. C* = $10.72, median feasible $42.70. The
-CIGARETTES menu rows and the coupons:
+Instance `eval_unseen-L2-302`, rollout 2/8. C* = $10.72, median feasible $42.70.
 
 ```text
+Shopping list (pick exactly one item per category):
+- APPLES
+- HEAT/SERVE
+- CIGARETTES
+- LAUNDRY DETERGENTS
+- CANDY - PACKAGED
+
+Menu:
+| code | category | brand | manufacturer | size | shelf price | loyalty disc |
+|---|---|---|---|---|---|---|
+| V3 | APPLES | National | 673 | 3 LB | $3.49 | $0.00 |
+| P9 | APPLES | National | 2 |   | $4.29 | $1.75 |
+| N5 | APPLES | National | 2 |   | $0.40 | $0.00 |
+| W4 | APPLES | National | 2 |   | $2.69 | $1.10 |
+| R0 | HEAT/SERVE | National | 6081 | 1.7 LB | $6.99 | $1.00 |
+| B1 | HEAT/SERVE | National | 151 | 25 OZ | $4.89 | $0.90 |
+| X3 | HEAT/SERVE | Private | 69 | 24 OZ | $5.99 | $1.00 |
+| T9 | HEAT/SERVE | National | 754 | 24 OZ | $7.49 | $1.50 |
+| S8 | CIGARETTES | National | 539 | 522797 CTN | $37.34 | $0.00 |
+| Q6 | CIGARETTES | National | 111 | CTN | $29.50 | $0.00 |
 | K9 | CIGARETTES | National | 539 | 515676 CTN | $22.19 | $0.00 |
 | N0 | CIGARETTES | National | 509 | CTN | $3.74 | $0.00 |
+| S3 | LAUNDRY DETERGENTS | Private | 69 | 32 LOADS | $2.59 | $0.00 |
+| G6 | LAUNDRY DETERGENTS | National | 764 | 48 LOAD | $14.29 | $1.30 |
+| Q2 | LAUNDRY DETERGENTS | National | 764 | 26 LDS | $7.99 | $1.00 |
+| R3 | LAUNDRY DETERGENTS | National | 764 | 52 LOADS | $14.29 | $1.30 |
+| L0 | CANDY - PACKAGED | National | 348 | 3 PK | $2.29 | $0.00 |
+| H0 | CANDY - PACKAGED | National | 348 |   | $1.99 | $0.00 |
+| Q8 | CANDY - PACKAGED | National | 348 | 3 PK | $2.29 | $0.00 |
+| Y5 | CANDY - PACKAGED | National | 348 |   | $1.99 | $0.99 |
 
+Coupons:
+- K0: $0.50 off item T9
+- K1: $2.50 off item V3
 - K2: $1.00 off item B1
 - K3: $0.75 off when the combined net spend on HEAT/SERVE, CIGARETTES reaches $23.80
+
+Constraints:
+- buy at least 4 National-brand items
+
+Choose the cheapest valid cart.
 ```
 
 ```json
 <answer>{"cart":{"APPLES":"N5","HEAT/SERVE":"B1","CIGARETTES":"K9","LAUNDRY DETERGENTS":"S3","CANDY - PACKAGED":"Y5"},"total":28.42}</answer>
 ```
 
-**Grade: reward 0.779** — feasible, price_ok true, but gap 1770c (opt 0.447:
-0.5 + 0.4·0.447 + 0.1). The model picked the $22.19 carton to push HEAT/SERVE + CIGARETTES
-net spend over the $23.80 threshold and collect $0.75:
+**Why reward 0.779**:
+
+- The cart is feasible and its arithmetic is right: nets N5 $0.40 + B1 $3.99 + K9 $22.19 +
+  S3 $2.59 + Y5 $1.00 = $30.17, minus K2 $1.00 + K3 $0.75 (B1 + K9 = $26.18 clears the
+  $23.80 threshold) = **$28.42**, exactly as claimed → `price_ok` = 1.
+- But $28.42 is 1770c above C*: `opt = (42.70 − 28.42) / (42.70 − 10.72) = 14.28 / 31.98
+  = 0.447`. Reward = 0.5 + 0.4 × 0.447 + 0.1 = **0.779**.
+- The trap: the model bought the $22.19 carton (K9) instead of the $3.74 one (N0) to
+  cross the $23.80 bundle threshold and collect $0.75:
 
 | | model cart | solver's optimum |
 |---|---|---|
@@ -255,9 +572,9 @@ net spend over the $23.80 threshold and collect $0.75:
 | coupons applied | K2 + K3 = $1.75 | K2 = $1.00 |
 | total | $28.42 | $10.72 |
 
-It spent $18.45 more on cigarettes to earn $0.75 back. This is the failure mode the trap
-stratum is built to produce, and the graded lesson a shopper-agent needs: a coupon that
-requires spending past the cheapest option is usually a loss.
+- It spent $18.45 more on cigarettes to earn $0.75 back. The graded lesson for a
+  shopper-agent: a coupon that requires spending past the cheapest option is usually a
+  loss — exactly the failure mode the trap stratum is built to produce.
 
 ## Results and per-instance variance
 
