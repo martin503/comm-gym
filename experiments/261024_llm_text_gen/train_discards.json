@@ -1,0 +1,9 @@
+{
+  "message_extraction|all": 52,
+  "message_leak|all": 2,
+  "reference_mismatch|absent": 1,
+  "reference_mismatch|clarify": 1,
+  "reference_mismatch|unique": 22,
+  "reference_parse|all": 2,
+  "resolution_parse|all": 13
+}

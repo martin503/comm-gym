@@ -7,7 +7,7 @@ import pandas as pd
 from loguru import logger
 from pydantic import BaseModel, Field, ValidationError
 
-from commgym.cartopt.instance import BrandTier
+from commgym.dunnhumby.types import BrandTier
 
 TRANSACTION_DTYPES: dict[Hashable, str] = {
     'household_key': 'int64',

@@ -1,0 +1,10 @@
+{
+  "message_extraction|all": 36,
+  "message_leak|all": 2,
+  "message_parse|all": 1,
+  "message_sentence_count|all": 2,
+  "reference_mismatch|clarify": 3,
+  "reference_mismatch|unique": 25,
+  "reference_parse|all": 4,
+  "resolution_parse|all": 19
+}

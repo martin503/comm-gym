@@ -1,0 +1,8 @@
+# Spec §6 per-claim weights; approve = 0.25 x (decision, line, reason, refund_ok),
+# reject = 0.25 x (decision, line) + 0.50 x reason, any refund on a reject zeroes the claim.
+w_decision: 0.25
+w_line: 0.25
+w_reason_approve: 0.25
+w_refund: 0.25
+w_reason_reject: 0.50
+refund_tol_cents: 1
