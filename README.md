@@ -1,13 +1,7 @@
 # comm-gym
 
 Commerce RL gym built on the [dunnhumby Complete Journey](https://www.dunnhumby.com/source-files/)
-grocery panel: gradeable, reward-hack-resistant LLM tasks with programmatic (never model-judged,
-except where explicitly disclosed) rewards, for evaluating and training policies.
-
-**Tasks:** [cartopt](docs/cartopt.md) (constrained cheapest-cart optimization under stacking
-coupons) and [offer](docs/offer.md) (grounded push-notification writing). Two more were tried
-and dropped — see [dropped tasks](docs/dropped_tasks.md); the [data and splits
-design](docs/data_splits.md) covers the household/time/category hold-out scheme.
+grocery panel: gradeable, reward-hack-resistant LLM tasks with programmatic and judge based rewards, for evaluating and training policies.
 
 ## Repository overview
 
@@ -74,7 +68,8 @@ conventions: `<task>/instances/...` maps to `instances/<task>/`, and
 `<task>/rollouts/<model>/<split>_<level>.jsonl` (plus offer `*.judged.jsonl` sidecars) maps to
 `rollouts/<task>/...`.
 
-Download with the hub CLI (no token needed; run without `uvx` if you have `hf` installed):
+Download with the hub CLI (public dataset, no token needed; run without `uvx` if you have
+`hf` installed):
 
 ```bash
 # everything for one task (instances + all rollouts)
@@ -111,26 +106,18 @@ Every task follows the same pipeline under `scripts/<task>/`:
 
 ```bash
 # cartopt
-uv run scripts/cartopt/run_eval.py --dry-run
-uv run scripts/cartopt/run_eval.py --split eval_unseen --levels L1,L2,L3,L4
-uv run scripts/cartopt/analyze.py --split eval_unseen        # → reports/cartopt/eval_report.md
+uv run scripts/cartopt/run_eval.py --models openai/gpt-6-luna --dry-run
+uv run scripts/cartopt/run_eval.py --models openai/gpt-6-luna --split eval_unseen --levels L1,L2,L3,L4
+uv run scripts/cartopt/analyze.py --models openai/gpt-6-luna --split eval_unseen   # → reports/cartopt/eval_report.md
 
 # offer
-uv run scripts/offer/run_eval.py --dry-run
-uv run scripts/offer/run_eval.py --split eval_unseen
+uv run scripts/offer/run_eval.py --models openai/gpt-6-luna --dry-run
+uv run scripts/offer/run_eval.py --models openai/gpt-6-luna --split eval_unseen
 uv run scripts/offer/judge.py --split eval_unseen
-uv run scripts/offer/analyze.py --split eval_unseen          # → reports/offer/offer_eval_report.md
+uv run scripts/offer/analyze.py --models openai/gpt-6-luna --split eval_unseen     # → reports/offer/offer_eval_report.md
 ```
 
 Cost ballparks at the configured params (gpt-6-luna): a full cartopt sweep ≈ $1.5, offer
 sweep + judging ≈ $3.5.
 
-## Development
 
-```bash
-uv run ruff format && uv run ruff check --fix && uv run ty check && uv run pytest
-```
-
-Task cards with reward functions, reward-hacking defenses, and current results:
-[cartopt](docs/cartopt.md) · [offer](docs/offer.md) · [data & splits](docs/data_splits.md) ·
-[dropped tasks](docs/dropped_tasks.md)
